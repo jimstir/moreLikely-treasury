@@ -117,3 +117,9 @@ public
 # OS metadata
 .DS_Store
 Thumbs.db
+
+# Hardhat compilation artifacts and TypeChain types
+artifacts/
+cache/
+typechain-types/
+
