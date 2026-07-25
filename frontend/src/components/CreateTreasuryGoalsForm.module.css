@@ -1,0 +1,142 @@
+.formContainer {
+  display: flex;
+  flex-direction: column;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-glass);
+  padding: 24px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+}
+
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.allocationList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.allocationRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.percentageInput {
+  position: relative;
+  width: 120px;
+}
+
+.percentageInput input {
+  padding-right: 28px;
+}
+
+.percentSymbol {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.removeBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  background: var(--bg-glass);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.removeBtn:hover:not(:disabled) {
+  background: var(--accent-rose-glow);
+  color: var(--accent-rose);
+  border-color: rgba(244, 63, 94, 0.4);
+}
+
+.removeBtn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.addBtn {
+  align-self: flex-start;
+  background: transparent;
+  border: 1px dashed var(--border-default);
+  color: var(--text-secondary);
+  padding: 10px 16px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  margin-top: 4px;
+}
+
+.addBtn:hover {
+  background: var(--bg-glass-hover);
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+.errorText {
+  color: var(--accent-rose-light);
+  font-size: 13px;
+  margin-top: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+}
+
+.fieldHint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+
+.textarea {
+  min-height: 100px;
+  resize: vertical;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 13px;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+@media (max-width: 768px) {
+  .allocationRow {
+    flex-wrap: wrap;
+  }
+  
+  .percentageInput {
+    flex: 1;
+  }
+}

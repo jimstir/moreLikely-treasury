@@ -65,8 +65,8 @@ This specification outlines the components, data models, and on-chain interactio
   3. **Evaluate Trade (Decision Report):** Run LLM analysis to determine if a buy/sell trade should be initiated. Draft a report containing transaction rationale, execution timeframe, and Uniswap swap routes/prices. (A structured input schema containing all compiled market parameters must be created and logged before LLM execution).
   4. **Align to Goals & Risk Check:** Cross-reference the trade with stakeholder goals (max percentage allocation, slippage limits, stop-loss). The agent automatically rejects proposed trades that fail the risk checks (low liquidity, low holder count, dropping price, or high volatility).
   5. **Propose Trade:** Autonomous Agent opens a proposal (`proposalOpen`) on-chain (subject to limits defined in treasury goals).
-  6. **Attest Voting Outcome:** Stakeholders sign EIP-712 vote payloads off-chain using their wallets. The agent checks the database to verify these votes. If the voting interval passes, the agent aggregates the signatures and broadcasts a cryptographic ECDSA attestation of the vote results to the `AssestSwapPolicy` contract.
-  7. **Execute Trade:** If voting passes, the agent executes the swap by triggering `proposalApproved` on the `TreasuryVault`, which recovers the agent's signature on-chain to verify the attestation and delegates to the `AssestSwapPolicy` smart contract to execute the Uniswap swap.
+  6. **Attest Voting Outcome:** Stakeholders sign EIP-712 vote payloads off-chain using their wallets. The agent checks the database to verify these votes. If the voting interval passes, the agent aggregates the signatures and broadcasts a cryptographic ECDSA attestation of the vote results to the `AssetSwapPolicy` contract.
+  7. **Execute Trade:** If voting passes, the agent executes the swap by triggering `proposalApproved` on the `TreasuryVault`, which recovers the agent's signature on-chain to verify the attestation and delegates to the `AssetSwapPolicy` smart contract to execute the Uniswap swap.
   8. **Continuous Evaluation:** Regularly monitor open proposals and close them if parameters shift. For returned value parameters, standard swaps are tracked with the target output asset, while non-trade proposals use fallback zero values (or custom attestation tags) so as not to break default `TreasuryVault` withdraw math.
 
 ### 6. Audit & Malicious Decision Dispute Flow
@@ -74,7 +74,7 @@ This specification outlines the components, data models, and on-chain interactio
 - **Trigger:** Stakeholder or third-party auditor flags an active proposal or decision as malicious.
 - **Action:**
   - Stakeholder views the logged LLM input/output data, 0G ticket receipts, and trade parameters.
-  - Stakeholder triggers a dispute by calling `triggerDispute(proposalId)` on-chain via the `AssestSwapPolicy` contract (requiring >1% share balance).
+  - Stakeholder triggers a dispute by calling `triggerDispute(proposalId)` on-chain via the `AssetSwapPolicy` contract (requiring >1% share balance).
   - The dispute details and audit evidence are posted to the database to sync with the operator and stakeholder dashboard.
 - **Backend / On-chain Sync:**
   - On-chain dispute transaction pauses voting progress and blocks execution signatures.
@@ -133,7 +133,7 @@ This specification outlines the components, data models, and on-chain interactio
 - **`TreasuryToken.sol`**
   - Standard ERC20 token minted 1:1 upon treasury deposit.
   - Represents voting shares inside the vault.
-- **`AssestSwapPolicy.sol` (Policy Contract)**
+- **`AssetSwapPolicy.sol` (Policy Contract)**
   - Deployed policy contract linked to specific proposal types.
   - Implements checks for voting attestations and verifies authorized transactions.
   - Interacts directly with the Uniswap Router/APIs to manage buying and selling assets.

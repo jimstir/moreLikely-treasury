@@ -1,8 +1,8 @@
 ==================================================
 GASLESS VOTING TEST INPUTS
-Timestamp: 2026-07-25T15:12:46.696Z
-TreasuryVault: 0xc0Da7c66C39C154a11F307e10070E44DEFeec1ED
-GaslessVotingPolicy: 0x16BBa9783b0EB15F7618436b37BEA8aA73263Ea4
+Timestamp: 2026-07-25T22:00:01.016Z
+TreasuryVault: 0xFd7fcdF0e5FDd0d327744E0Ce276a6F9Aa289aD2
+TreasuryVoting: 0xD3B75A6478E05D33efD4ef87Fc4f26A9356DeD3e
 ==================================================
 
 INITIAL STAKEHOLDER BALANCES:

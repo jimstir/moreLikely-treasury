@@ -1,0 +1,97 @@
+.container {
+  display: flex;
+  flex-direction: column;
+}
+
+.hint {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  margin-bottom: 20px;
+}
+
+.progressContainer {
+  margin-bottom: 24px;
+}
+
+.progressLabels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.progressBar {
+  display: flex;
+  height: 8px;
+  width: 100%;
+  background: var(--bg-glass-hover);
+  border-radius: 100px;
+  overflow: hidden;
+}
+
+.progressFor {
+  height: 100%;
+  background: var(--gradient-success);
+  transition: width var(--transition-slow);
+}
+
+.progressAgainst {
+  height: 100%;
+  background: var(--gradient-danger);
+  transition: width var(--transition-slow);
+  margin-left: auto;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.btnApprove {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--accent-emerald-light);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.btnApprove:hover:not(:disabled) {
+  background: rgba(16, 185, 129, 0.25);
+  border-color: rgba(16, 185, 129, 0.5);
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.2);
+}
+
+.btnReject {
+  background: rgba(244, 63, 94, 0.15);
+  color: var(--accent-rose-light);
+  border: 1px solid rgba(244, 63, 94, 0.3);
+}
+
+.btnReject:hover:not(:disabled) {
+  background: rgba(244, 63, 94, 0.25);
+  border-color: rgba(244, 63, 94, 0.5);
+  box-shadow: 0 0 15px rgba(244, 63, 94, 0.2);
+}
+
+.successState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 16px 0;
+}
+
+.icon {
+  font-size: 2rem;
+  margin-bottom: 8px;
+}
+
+.successState h4 {
+  color: var(--accent-emerald-light);
+}
+
+.successState p {
+  font-size: 13px;
+  color: var(--text-muted);
+}

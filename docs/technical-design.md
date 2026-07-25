@@ -60,7 +60,7 @@ model Proposal {
   treasuryId      String
   treasury        Treasury         @relation(fields: [treasuryId], references: [id], onDelete: Cascade)
   proposerAddress String           // Who opened the proposal
-  recipientAddress String          // Recipient EOA or AssestSwapPolicy contract address
+  recipientAddress String          // Recipient EOA or AssetSwapPolicy contract address
   withdrawAmount  Float            // Amount of assets to withdraw for the trade
   targetToken     String           // Address of target token to buy
   votingMode      String           // 'value-ratio' or 'supply-based'
@@ -127,7 +127,7 @@ sequenceDiagram
     participant Frontend
     participant DB as Next.js DB
     participant Agent as 0G Owner Agent
-    participant Contract as AssestSwapPolicy.sol
+    participant Contract as AssetSwapPolicy.sol
 
     Stakeholder->>Frontend: Casts Vote (Approve/Reject)
     Frontend->>Stakeholder: Prompts MetaMask signTypedData (EIP-712)
@@ -147,7 +147,7 @@ sequenceDiagram
    - `domain`: `{ name: "SmartTreasuryVoting", version: "1", chainId: X, verifyingContract: Address }`
    - `types`: `{ Vote: [{ name: "proposalId", type: "uint256" }, { name: "support", type: "bool" }, { name: "voter", type: "address" }] }`
 2. **Aggregated Attestation**:
-   - The AI Owner Agent acts as the authorized validator (its EOA address is registered as `attestationSigner` in `AssestSwapPolicy.sol`).
+   - The AI Owner Agent acts as the authorized validator (its EOA address is registered as `attestationSigner` in `AssetSwapPolicy.sol`).
    - When the voting window closes, the agent signs the outcome payload: `keccak256(abi.encodePacked(proposalId, totalVotesFor, totalVotesAgainst, passed))`.
    - The transaction submitted to the contract passes these parameters along with the signature. The contract executes `ecrecover` to confirm the authenticity of the attestation before executing the swap.
 
@@ -155,7 +155,7 @@ sequenceDiagram
 - The AI Agent runs inside a verifiable execution environment on **0G**. When it invokes the LLM (Gemini or OpenAI), it records the prompt inputs, model parameters, and raw output.
 - It signs these logs to generate a **0G Ticket Receipt**.
 - The `AuditInteractionsWidget` displays these tickets. If the inputs in the ticket do not match live market data, or if the agent acted outside the parameters defined by `TreasuryGoals`, stakeholders can flag it.
-- **On-Chain Pause**: If a dispute is reported, a stakeholder can call `triggerDispute(proposalId)` on the `AssestSwapPolicy.sol` contract. This is a public function that requires the caller to hold a minimum percentage of `TreasuryToken` shares (e.g. >1%). Calling it flags the proposal as `disputed` on-chain and pauses execution for a set cooldown period (`disputePeriodSeconds`).
+- **On-Chain Pause**: If a dispute is reported, a stakeholder can call `triggerDispute(proposalId)` on the `AssetSwapPolicy.sol` contract. This is a public function that requires the caller to hold a minimum percentage of `TreasuryToken` shares (e.g. >1%). Calling it flags the proposal as `disputed` on-chain and pauses execution for a set cooldown period (`disputePeriodSeconds`).
 
 ---
 
@@ -207,7 +207,7 @@ sequenceDiagram
 
 ## 4. Uniswap Swapping API Integration
 
-The `AssestSwapPolicy.sol` contract delegates execution to the Uniswap Universal Router. The transaction payload is generated off-chain via the Uniswap Swapping API and verified on-chain.
+The `AssetSwapPolicy.sol` contract delegates execution to the Uniswap Universal Router. The transaction payload is generated off-chain via the Uniswap Swapping API and verified on-chain.
 
 ### API Swap Flow
 1. **Get Quote**: The AI Agent queries the Uniswap trade gateway to find the best route:
@@ -220,15 +220,15 @@ The `AssestSwapPolicy.sol` contract delegates execution to the Uniswap Universal
    Headers: { "x-api-key": "YOUR_API_KEY", "Content-Type": "application/json" }
    Body: { "quote": { ...quoteObject }, "simulateTransaction": true }
    ```
-3. **Execution Broadcast**: The response contains `{ "transaction": { "to": "0xRouter...", "data": "0xCalldata...", "value": "0" } }`. The agent submits this `data` bytes payload directly to the `AssestSwapPolicy.sol` contract.
+3. **Execution Broadcast**: The response contains `{ "transaction": { "to": "0xRouter...", "data": "0xCalldata...", "value": "0" } }`. The agent submits this `data` bytes payload directly to the `AssetSwapPolicy.sol` contract.
 
 ---
 
 ## 5. Smart Contract Interfaces
 
-### `AssestSwapPolicy.sol`
+### `AssetSwapPolicy.sol`
 ```solidity
-interface IAssestSwapPolicy {
+interface IAssetSwapPolicy {
     event SwapExecuted(uint256 indexed proposalId, address indexed tokenIn, address indexed tokenOut, uint256 amountIn, uint256 amountOut);
     event ProposalDisputed(uint256 indexed proposalId, address indexed disputer, uint256 reviewPeriodEnd);
 

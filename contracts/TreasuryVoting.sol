@@ -10,7 +10,7 @@ interface ITreasuryVault {
     function vote(uint256 proposal) external view returns (bool);
 }
 
-contract GaslessVotingPolicy is Ownable {
+contract TreasuryVoting is Ownable {
     using SafeERC20 for IERC20;
 
     struct StakeholderVote {
@@ -42,7 +42,7 @@ contract GaslessVotingPolicy is Ownable {
         DOMAIN_SEPARATOR = keccak256(
             abi.encode(
                 keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-                keccak256(bytes("GaslessVotingPolicy")),
+                keccak256(bytes("TreasuryVoting")),
                 keccak256(bytes("1")),
                 chainId,
                 address(this)

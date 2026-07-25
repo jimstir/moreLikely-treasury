@@ -22,6 +22,14 @@ const config: HardhatUserConfig = {
         url: process.env.SEPOLIA_RPC_URL || "https://gateway.tenderly.co/public/sepolia",
       },
     },
+    sepolia: {
+      url: process.env.SEPOLIA_RPC_URL || "https://gateway.tenderly.co/public/sepolia",
+      accounts: [
+        process.env.OWNER_PRIVATE_KEY,
+        process.env.STAKEHOLDER_PRIVATE_KEY,
+        process.env.AI_AGENT_PRIVATE_KEY
+      ].filter((x): x is string => !!x)
+    }
   },
 };
 

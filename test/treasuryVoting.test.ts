@@ -54,9 +54,9 @@ describe("Gasless Voting Scale Suite (10 Stakeholders)", function () {
         // Configure vault on TreasuryToken
         await (await treasuryToken.setVault(await treasuryVault.getAddress())).wait();
 
-        // 4. Deploy GaslessVotingPolicy
-        const GaslessVotingPolicy = await ethers.getContractFactory("GaslessVotingPolicy");
-        votingPolicy = await GaslessVotingPolicy.deploy(
+        // 4. Deploy TreasuryVoting
+        const TreasuryVoting = await ethers.getContractFactory("TreasuryVoting");
+        votingPolicy = await TreasuryVoting.deploy(
             await treasuryVault.getAddress(),
             await treasuryToken.getAddress(),
             ownerAddress
@@ -84,7 +84,7 @@ describe("Gasless Voting Scale Suite (10 Stakeholders)", function () {
         inputsLog += "GASLESS VOTING TEST INPUTS\n";
         inputsLog += `Timestamp: ${new Date().toISOString()}\n`;
         inputsLog += `TreasuryVault: ${await treasuryVault.getAddress()}\n`;
-        inputsLog += `GaslessVotingPolicy: ${await votingPolicy.getAddress()}\n`;
+        inputsLog += `TreasuryVoting: ${await votingPolicy.getAddress()}\n`;
         inputsLog += "==================================================\n\n";
         inputsLog += "INITIAL STAKEHOLDER BALANCES:\n";
 
@@ -113,7 +113,7 @@ describe("Gasless Voting Scale Suite (10 Stakeholders)", function () {
     ) {
         const chainId = (await ethers.provider.getNetwork()).chainId;
         const domain = {
-            name: "GaslessVotingPolicy",
+            name: "TreasuryVoting",
             version: "1",
             chainId: chainId,
             verifyingContract: await votingPolicy.getAddress()

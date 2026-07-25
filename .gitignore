@@ -123,3 +123,7 @@ artifacts/
 cache/
 typechain-types/
 
+
+# Environment Variables
+.env
+.env.local

@@ -1,0 +1,118 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Wallet {
+  id                  String           @id @default(uuid())
+  address             String           @unique // Lowercase EVM wallet address
+  role                String           @default("none") // 'owner', 'stakeholder', or 'none'
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  createdTreasuries   Treasury[]       @relation("TreasuryOwner")
+  treasuryMemberships TreasuryMember[]
+  votes               Vote[]
+  disputes            Dispute[]
+}
+
+model Treasury {
+  id              String           @id @default(uuid())
+  address         String           @unique // Smart contract address of TreasuryVault
+  name            String
+  baseAssetAddress String?          // Base ERC20 token address (optional - can be determined from on-chain)
+  tokenAddress    String           @unique // Address of TreasuryToken ERC20
+  ownerAddress    String           // Current owner EOA address (can be operator or AI agent EOA)
+  ownerId         String           
+  owner           Wallet           @relation("TreasuryOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members         TreasuryMember[] 
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  goals           TreasuryGoals?
+  proposals       Proposal[]
+}
+
+model TreasuryGoals {
+  id                    String   @id @default(uuid())
+  treasuryId            String   @unique
+  treasury              Treasury @relation(fields: [treasuryId], references: [id], onDelete: Cascade)
+  slippageLimit         Float    @default(0.5) // e.g. 0.5%
+  stopLoss              Float    @default(5.0) // e.g. 5.0%
+  maxTreasuryPercentage Float    @default(10.0) // max size of a single trade (e.g. 10.0%)
+  targetAllocations     Json     // e.g. { "WETH": 40.0, "WBTC": 40.0, "USDC": 20.0 }
+  dataSources           String   @default("") // Comma-separated list of approved web/news feeds
+  disputePeriodSeconds  Int      @default(86400) // Default 24 hours review delay
+  updatedAt             DateTime @updatedAt
+}
+
+model TreasuryMember {
+  id                String   @id @default(uuid())
+  treasuryId        String
+  treasury          Treasury @relation(fields: [treasuryId], references: [id], onDelete: Cascade)
+  memberId          String
+  member            Wallet   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  joinedAt          DateTime @default(now())
+  
+  @@unique([treasuryId, memberId])
+}
+
+model Proposal {
+  id              String           @id @default(uuid())
+  onChainId       Int              // The ID mapping to proposalBook[num] on-chain
+  treasuryId      String
+  treasury        Treasury         @relation(fields: [treasuryId], references: [id], onDelete: Cascade)
+  proposerAddress String           // Who opened the proposal
+  recipientAddress String          // Recipient EOA or AssestSwapPolicy contract address
+  withdrawAmount  Float            // Amount of assets to withdraw for the trade
+  targetToken     String           // Address of target token to buy
+  votingMode      String           // 'value-ratio' or 'supply-based'
+  status          String           @default("pending") // 'pending', 'approved', 'executed', 'closed', 'disputed'
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  decisionReport  DecisionReport?
+  votes           Vote[]
+  disputes        Dispute[]
+}
+
+model DecisionReport {
+  id              String   @id @default(uuid())
+  proposalId      String   @unique
+  proposal        Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  rationale       String   // LLM reasoning for the trade
+  timeframe       String   // e.g. 'short-term', 'long-term'
+  swapRoutes      Json     // Uniswap swap path and pricing
+  rawMarketData   Json     // Uniswap pool liquidity, prices, holder statistics
+  ticketReceipt   String?  // Verifiable execution ticket receipt from 0G AI Network
+  createdAt       DateTime @default(now())
+}
+
+model Vote {
+  id              String   @id @default(uuid())
+  proposalId      String
+  proposal        Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  voterId         String
+  voter           Wallet   @relation(fields: [voterId], references: [id], onDelete: Cascade)
+  shares          Float    // Voting power (weight of TreasuryToken at proposal block)
+  support         Boolean  // true = Approve, false = Reject/Veto
+  signature       String   // Cryptographic EIP-712 signature proving vote authenticity
+  timestamp       DateTime @default(now())
+
+  @@unique([proposalId, voterId])
+}
+
+model Dispute {
+  id              String   @id @default(uuid())
+  proposalId      String
+  proposal        Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  disputerId      String
+  disputer        Wallet   @relation(fields: [disputerId], references: [id], onDelete: Cascade)
+  reason          String   // Description of violation
+  evidence        String   // Context / Audit data
+  txHash          String   @unique // Transaction hash of on-chain pause trigger
+  reviewPeriodEnd DateTime // Time when the pause window expires
+  resolved        Boolean  @default(false)
+  createdAt       DateTime @default(now())
+}

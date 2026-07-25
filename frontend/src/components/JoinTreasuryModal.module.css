@@ -1,0 +1,100 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+}
+
+.balanceInfo {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--accent-blue-light);
+  text-align: right;
+}
+
+.inputGroup {
+  display: flex;
+  position: relative;
+  align-items: center;
+}
+
+.inputGroup input {
+  padding-right: 64px;
+}
+
+.maxBtn {
+  position: absolute;
+  right: 8px;
+  background: var(--bg-glass-hover);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.maxBtn:hover:not(:disabled) {
+  background: var(--accent-blue-glow);
+  color: var(--accent-blue-light);
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+.maxBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Loading State */
+.loadingState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 0;
+  gap: 16px;
+  text-align: center;
+}
+
+.spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid var(--border-default);
+  border-top-color: var(--accent-emerald);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.statusText {
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.hintText {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* Success State */
+.successState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32px 0;
+  gap: 12px;
+  text-align: center;
+}
+
+.successIcon {
+  font-size: 3.5rem;
+  margin-bottom: 8px;
+}
