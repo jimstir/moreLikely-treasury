@@ -43,38 +43,155 @@ This specification outlines the components, data models, and on-chain interactio
   - Saves the newly deployed contract addresses to the user's active session and application database.
   - Redirects the user to the Treasury Operator Dashboard.
 
-### 4. Deploying the Owner Agent (0G Hosted)
+### 4. Deploying the Owner Agent
 - **Component:** `GovernorControlPanel`
-- **Trigger:** Owner toggles Governor Mode from "Manual" to "AI Governor (Hosted on 0G)".
+- **Trigger:** Owner toggles Governor Mode from "Manual" to "AI Governor".
 - **Action:**
   - Must be the owner of a deployed on-chain treasury with the `CreateTreasury` module.
   - Prompts owner to configure the initial **AI Treasury Goals Form** (defining target allocations, whitelist tokens, stop-loss limits, and data/web sources).
   - Prompts owner to allocate resources/budget for the agent (gas allowance, EOA wallet provisioning).
-  - Launches/deploys the AI Owner Agent instance on the preferred host platform (0G decentralized AI network). (AI Owner Agent instance should be its own module to make future integration easy. E.g. Gemini and OpenAI will be integrated.).
+  - **AI Network Selection:** The owner selects which AI network to host the agent on. The `GovernorControlPanel` presents a dropdown/selector with supported AI networks. **0G Compute Network** is the default and first supported network. The architecture supports additional networks (e.g. Gemini, OpenAI, Anthropic) as they are integrated — each network adapter implements the same agent deployment and tool registration interface, so the agent module and tool server remain unchanged regardless of which network is chosen. The selected network and its configuration (API keys, model name, endpoint URL) are saved to the database and used for all subsequent agent invocations.
+  - **Invocation Frequency:** The owner configures how often the agent is invoked to run a decision cycle. Options include predefined intervals (e.g. "Every 1 hour", "Every 6 hours", "Once a day", "Once a week") or a custom cron expression. This controls agent operating cost — each invocation incurs LLM inference fees on the selected AI network. The frequency is saved to the database and enforced by the backend scheduler. The owner can update the frequency at any time from the `GovernorControlPanel` without redeploying the agent.
+  - Deploys the AI Owner Agent as an autonomous LLM agent on the selected AI network. The agent is an LLM that reasons independently and calls tools exposed by this project to interact with the treasury and market. The AI Owner Agent should be its own module to make future integration easy.
+- **Agent Wallet & Gas Funding:**
+  - The backend generates an EOA wallet for the agent. The EOA private key is stored securely on the backend server and never exposed to the AI network.
+  - **Smart Wallet Gas Escrow (`AgentGasEscrow.sol`):** To limit exposure, the agent EOA is not pre-funded. Instead, the owner deploys a custom `AgentGasEscrow` smart contract that holds the gas budget and is tightly coupled with the `TreasuryVault`. The escrow contract enforces strict on-chain checks before releasing small amounts of gas (e.g., 0.01 ETH) to the agent EOA:
+    - **Execution Gas:** Before releasing gas for `executeSwap`, the escrow checks the `TreasuryVault` to verify that `TreasuryVault.vote(proposalId) == true` and that the proposal has not already been executed.
+    - **Proposal Gas:** Before releasing gas for `proposalOpen`, the escrow checks a time-based rate limit that matches the owner-configured agent invocation frequency (e.g., if the agent runs once a day, the contract only releases gas for a new proposal once every 24 hours).
+    - **Kill Switch:** The owner can freeze or drain the escrow at any time via MetaMask.
+  - This architecture ensures that neither the backend nor the agent has absolute authority over the gas budget. A compromised server cannot drain the escrow because it cannot fake an approved proposal on-chain or bypass the proposal rate limit.
+  - The owner can monitor the smart wallet balance and agent gas consumption from the `GovernorControlPanel` dashboard, and top up the smart wallet via MetaMask at any time.
 - **Backend / On-chain Sync:**
-  - Deploys EOA credentials and policy configuration to the 0G host.
-  - Connects the agent's signer EOA as the registered `_tOwner` of the `TreasuryVault` smart contract.
+  - Registers the agent's EOA as `attestationSigner` on `AssetSwapPolicy.sol` and as the `_tOwner` on `TreasuryVault`.
+  - Configures the agent's system prompt with the treasury address, policy contract address, treasury goals, and approved tokens.
+  - Saves the selected AI network configuration (API keys, model name, endpoint URL), invocation frequency, and smart wallet address to the database.
+  - Initializes the invocation scheduler at the owner-configured frequency.
 
 
-### 5. Agent Decision Loop (Autonomous Operation)
-- **Component:** `AI Owner Agent` (Background service running on 0G Platform)
-- **Trigger:** Configured time interval tick (e.g. every 1 hour, or real-time priority override if conditions trigger stop-loss).
-- **Loop Sequence:**
-  1. **Monitor Current State:** Query treasury asset balances and retrieve current treasury conditions.
-  2. **Monitor Market Conditions:** Retrieve token prices(Uniswap API), liquidity metrics(Uniswap Api), and news/signals (from apporved web sources from Owner/Stakeholders).
-  3. **Evaluate Trade (Decision Report):** Run LLM analysis to determine if a buy/sell trade should be initiated. Draft a report containing transaction rationale, execution timeframe, and Uniswap swap routes/prices. (A structured input schema containing all compiled market parameters must be created and logged before LLM execution).
-  4. **Align to Goals & Risk Check:** Cross-reference the trade with stakeholder goals (max percentage allocation, slippage limits, stop-loss). The agent automatically rejects proposed trades that fail the risk checks (low liquidity, low holder count, dropping price, or high volatility).
-  5. **Propose Trade:** Autonomous Agent opens a proposal (`proposalOpen`) on-chain (subject to limits defined in treasury goals).
-  6. **Attest Voting Outcome:** Stakeholders sign EIP-712 vote payloads off-chain using their wallets. The agent checks the database to verify these votes. If the voting interval passes, the agent aggregates the signatures and broadcasts a cryptographic ECDSA attestation of the vote results to the `AssetSwapPolicy` contract.
-  7. **Execute Trade:** If voting passes, the agent executes the swap by triggering `proposalApproved` on the `TreasuryVault`, which recovers the agent's signature on-chain to verify the attestation and delegates to the `AssetSwapPolicy` smart contract to execute the Uniswap swap.
-  8. **Continuous Evaluation:** Regularly monitor open proposals and close them if parameters shift. For returned value parameters, standard swaps are tracked with the target output asset, while non-trade proposals use fallback zero values (or custom attestation tags) so as not to break default `TreasuryVault` withdraw math.
+### 5. AI Agent Architecture (Autonomous Operation)
+- **Component:** `AI Owner Agent` — an autonomous LLM agent running on the owner's selected AI network (0G Compute Network by default).
+- **Architecture:** The backend drives the agent loop. On each scheduled invocation, the backend sends an inference request to the AI network (e.g. 0G Compute `/chat/completions`) containing the system prompt and tool definitions. The LLM responds with tool call requests. The backend executes each requested tool locally (reading on-chain state, fetching market data, submitting transactions using the stored EOA private key), sends the tool results back to the LLM, and continues the conversation until the LLM returns a final response with no further tool calls. The LLM never directly accesses the backend server or the EOA private key — it only reasons and requests tool calls; the backend handles all execution.
+- **System Prompt Context:** The agent receives its treasury address, policy contract address, treasury goals, and the set of approved tokens. The system prompt instructs the agent to manage the treasury according to stakeholder-defined goals.
+
+#### Invocation Loop
+Each scheduled tick executes the following loop on the backend:
+1. Backend constructs the inference request: system prompt, conversation history (if continuing a multi-tick operation like monitoring a vote), and tool definitions with parameter schemas.
+2. Backend sends the request to the selected AI network's chat completions endpoint (e.g. `POST {0G_BASE_URL}/chat/completions` with `tools` parameter).
+3. The AI network returns a response containing one or more `tool_calls` — structured requests specifying which tool to call and with what parameters.
+4. Backend executes each requested tool locally as a function call (e.g. reads the vault contract, queries Uniswap, submits a transaction).
+5. Backend appends the tool results as messages and sends the updated conversation back to the AI network.
+6. Steps 3–5 repeat until the LLM returns a final response with no further tool calls.
+7. Backend stores the complete conversation transcript (see §5.3 Conversation Logging).
+
+#### Agent Tool Definitions
+The following tools are implemented as local functions on the backend. They are registered as tool definitions (JSON schemas) in the inference request so the LLM can discover and request them. The LLM decides which tools to call, in what order, and how to interpret the results.
+
+##### 1. `read_treasury_state`
+- **Description:** Returns the current on-chain state of the treasury vault — asset balances, total share supply, approved tokens, and open proposals.
+- **Parameters:** `{ treasuryAddress: string }`
+- **Returns:** `{ assets: string[], balances: { [token: string]: string }, totalShareSupply: string, openProposals: { id: number, status: string, amount: string, targetToken: string }[] }`
+- **Implementation:** Queries `TreasuryVault` contract view functions (`asset()`, `approvedTokens()`, `proposalBook()`) and ERC20 `balanceOf` for each approved token.
+
+##### 2. `get_market_data`
+- **Description:** Fetches current market data for a given token pair — prices, liquidity depth, and 24h price change from Uniswap pools.
+- **Parameters:** `{ tokenIn: string, tokenOut: string, chainId: number }`
+- **Returns:** `{ price: number, liquidity: string, priceChange24h: number, volume24h: string }`
+- **Implementation:** Queries the Uniswap Swapping API and/or on-chain pool data.
+
+##### 3. `get_treasury_goals`
+- **Description:** Returns the stakeholder-configured investment goals and risk constraints for the treasury.
+- **Parameters:** `{ treasuryAddress: string }`
+- **Returns:** `{ targetAllocations: { [token: string]: number }, slippageLimit: number, stopLoss: number, maxTreasuryPercentage: number, disputePeriodSeconds: number, approvedDataSources: string[] }`
+- **Implementation:** Reads from the application database (`TreasuryGoals` model).
+
+##### 4. `check_risk`
+- **Description:** Validates a proposed trade against the treasury's risk constraints. Checks balance sufficiency, allocation limits, slippage tolerance, stop-loss thresholds, and liquidity depth.
+- **Parameters:** `{ tokenIn: string, tokenOut: string, amountIn: string, treasuryAddress: string }`
+- **Returns:** `{ passed: boolean, reason: string, checks: { name: string, passed: boolean, detail: string }[] }`
+- **Implementation:** Runs risk validation rules against on-chain state and treasury goals.
+
+##### 5. `get_uniswap_quote`
+- **Description:** Fetches a live swap quote from the Uniswap Swapping API, including expected output amount, price impact, and the encoded transaction calldata for execution.
+- **Parameters:** `{ tokenIn: string, tokenOut: string, amount: string, slippageTolerance: number, recipient: string, chainId: number }`
+- **Returns:** `{ amountOut: string, priceImpact: number, gasEstimate: string, swapCallData: string }`
+- **Implementation:** Calls `POST https://trade-api.gateway.uniswap.org/v1/quote` with the Uniswap API key.
+
+##### 6. `propose_trade`
+- **Description:** Opens a new trade proposal on-chain via `TreasuryVault.proposalOpen()`. The proposal enters the voting queue for stakeholder approval.
+- **Parameters:** `{ treasuryAddress: string, policyAddress: string, tokenIn: string, tokenOut: string, amountIn: string, rationale: string }`
+- **Returns:** `{ success: boolean, proposalId: number, txHash: string }`
+- **Implementation:** Submits an on-chain transaction using the agent's EOA private key stored on the backend.
+
+##### 7. `get_voting_status`
+- **Description:** Returns the current voting tally for an open proposal — total votes for, total votes against, number of voters, and whether the voting interval has ended.
+- **Parameters:** `{ proposalId: string }`
+- **Returns:** `{ totalVotesFor: string, totalVotesAgainst: string, voterCount: number, votingEnded: boolean, isDisputed: boolean }`
+- **Implementation:** Reads aggregated off-chain EIP-712 signed votes from the database and checks on-chain dispute status.
+
+##### 8. `execute_swap`
+- **Description:** Executes an approved swap proposal. Generates the agent's ECDSA attestation signature over the voting outcome, calls `proposalApproved` on `TreasuryVault` to transfer funds to the policy contract, then calls `executeSwap` on `AssetSwapPolicy` with the Uniswap calldata.
+- **Parameters:** `{ proposalId: number, tokenIn: string, tokenOut: string, amountIn: string, totalVotesFor: string, totalVotesAgainst: string, swapCallData: string }`
+- **Returns:** `{ success: boolean, txHash: string, amountOut: string }`
+- **Implementation:** Signs the attestation payload using the agent's EOA private key on the backend and submits the on-chain transaction. The `AssetSwapPolicy` contract verifies the attestation via `ecrecover` before executing the Uniswap swap.
+
+##### 9. `get_proposals`
+- **Description:** Returns all proposals for the treasury, filtered by status. Used by the agent to monitor open proposals, track execution, and decide whether to close stale proposals.
+- **Parameters:** `{ treasuryAddress: string, status?: string }`
+- **Returns:** `{ proposals: { id: number, status: string, amount: string, targetToken: string, createdAt: string, votingStatus: object }[] }`
+- **Implementation:** Queries the application database and cross-references on-chain proposal state.
+
+##### 10. `close_proposal`
+- **Description:** Closes an open proposal that the agent determines should not proceed (e.g., market conditions shifted, stop-loss triggered, or the proposal became stale).
+- **Parameters:** `{ proposalId: number, reason: string }`
+- **Returns:** `{ success: boolean, txHash: string }`
+- **Implementation:** Calls the appropriate close/cancel function on `TreasuryVault`.
+
+#### Agent Reasoning Flow
+The agent is free to call tools in whatever order its reasoning dictates. A typical flow might look like:
+1. Call `read_treasury_state` to understand current holdings.
+2. Call `get_treasury_goals` to understand constraints.
+3. Call `get_market_data` for tokens that are over/underweight relative to target allocations.
+4. Reason about whether a rebalance trade is warranted.
+5. Call `check_risk` to validate the proposed trade.
+6. Call `get_uniswap_quote` to get pricing and calldata.
+7. Call `propose_trade` to open the proposal on-chain.
+8. On subsequent ticks, call `get_voting_status` to check if voting has concluded.
+9. Call `execute_swap` when voting passes.
+10. Call `get_proposals` to monitor open proposals and `close_proposal` if conditions shift.
+
+However, the agent may deviate from this sequence based on its reasoning. For example, it may decide to check multiple token pairs, skip proposing if risk checks fail, or prioritize closing a stale proposal before evaluating new trades.
+
+#### Conversation Logging & Audit Trail
+Every invocation of the agent produces a complete conversation transcript that is stored in the database for auditability. The transcript captures the full request-response cycle between the backend and the AI network, providing a tamper-evident record of the agent's reasoning and actions.
+
+Each stored transcript includes:
+- **Invocation metadata:** Timestamp, treasury address, AI network used, model name, invocation frequency setting, and the agent's EOA address.
+- **System prompt:** The full system prompt sent to the LLM, including treasury context and goals.
+- **Conversation messages:** Every message in the conversation, in order:
+  - LLM reasoning responses (the agent's natural language thinking)
+  - Tool call requests (which tool the LLM asked to call, with exact parameters)
+  - Tool call results (the data returned by each tool execution)
+  - Final LLM response (the agent's summary/conclusion for the tick)
+- **On-chain actions:** Any transaction hashes produced during tool execution (proposals opened, swaps executed, proposals closed), linked to the specific tool call that triggered them.
+- **Error log:** Any tool execution failures, AI network errors, or on-chain transaction reverts encountered during the invocation.
+
+Transcripts are stored in the `AgentInvocation` database model and linked to the treasury. They are surfaced to owners and stakeholders through the `AuditInteractionsWidget` (see §6). When a proposal is created or executed during an invocation, the transcript is cross-linked to the `DecisionReport` for that proposal, providing a complete audit chain from the agent's first observation through to the on-chain action.
+
+#### On-Chain Safety Boundary
+Regardless of the agent's reasoning, the smart contracts enforce hard safety rules:
+- `AssetSwapPolicy.executeSwap()` requires a valid ECDSA attestation signature, voting threshold (`totalVotesFor > totalVotesAgainst`), and sufficient token balance.
+- `triggerDispute()` allows any stakeholder with >1% shares to pause execution.
+- The `TreasuryVault` enforces proposal accounting and prevents double-execution.
+
+The agent cannot bypass these on-chain checks. The tools are the agent's interface to the world; the contracts are the world's guardrails on the agent.
 
 ### 6. Audit & Malicious Decision Dispute Flow
 - **Component:** `AuditInteractionsWidget`
 - **Trigger:** Stakeholder or third-party auditor flags an active proposal or decision as malicious.
 - **Action:**
-  - Stakeholder views the logged LLM input/output data, 0G ticket receipts, and trade parameters.
-  - Stakeholder triggers a dispute by calling `triggerDispute(proposalId)` on-chain via the `AssetSwapPolicy` contract (requiring >1% share balance).
+  - Stakeholder views the stored agent conversation transcripts — the full sequence of LLM reasoning, tool calls (with exact parameters), tool results, and on-chain transaction hashes produced during each invocation. This provides complete visibility into why the agent made a decision and what data it was acting on.
+  - Stakeholder can inspect the `DecisionReport` linked to any proposal, which includes the agent's rationale, the market data snapshot at the time of the decision, and the Uniswap swap routes/pricing used.
+  - If the agent's reasoning or inputs appear manipulated, inconsistent with live market data, or outside the parameters defined by `TreasuryGoals`, the stakeholder triggers a dispute by calling `triggerDispute(proposalId)` on-chain via the `AssetSwapPolicy` contract (requiring >1% share balance).
   - The dispute details and audit evidence are posted to the database to sync with the operator and stakeholder dashboard.
 - **Backend / On-chain Sync:**
   - On-chain dispute transaction pauses voting progress and blocks execution signatures.
@@ -113,9 +230,14 @@ This specification outlines the components, data models, and on-chain interactio
     - `Report Dispute Button`: Form to submit malicious activity reports.
     - `Audit Status Panel`: Displays current audit state (Active, Paused, Resolved) and remaining review period timer.
 
-### 5. AI Governor & Orchestration APIs
-- **`POST /api/governor/evaluate`** (Agent Endpoint)
-    - Orchestrates the **Agent Decision Loop**: gathers state, analyzes market data, checks liquidity constraints, and builds proposal arguments.
+### 5. AI Agent Module
+The AI agent logic is implemented as a backend module (not API endpoints). The module contains:
+
+- **Agent Runner** — The core invocation loop. Called by the backend scheduler at the owner-configured frequency. Constructs the inference request (system prompt + tool definitions + conversation history), sends it to the selected AI network, processes tool call responses, executes tools locally, and loops until the LLM completes. Stores the full conversation transcript on completion.
+- **Tool Functions** — Local implementations of each tool (`read_treasury_state`, `get_market_data`, `check_risk`, `propose_trade`, `execute_swap`, etc.). Each function reads on-chain state, queries external APIs, or submits transactions using the agent's EOA private key stored on the server.
+- **AI Network Adapters** — Pluggable adapters for each supported AI network (0G Compute, Gemini, OpenAI, etc.). Each adapter translates the tool definitions and conversation messages into the network's specific API format (e.g. OpenAI-compatible chat completions with `tools` parameter). New networks are added by implementing a new adapter.
+- **Conversation Logger** — Persists the complete request-response transcript of each invocation to the `AgentInvocation` database model. Cross-links transcripts to proposals and `DecisionReport` records for audit.
+
 - **`POST /api/voting/attest`** (Attestation API)
     - Validates off-chain signature votes and pushes the aggregated attestation record to the blockchain.
 - **`POST /api/audit/report`** (Audit API)
