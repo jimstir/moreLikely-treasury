@@ -127,3 +127,10 @@ typechain-types/
 # Environment Variables
 .env
 .env.local
+
+# Docs
+docs/*
+!docs/treasury-req.md
+!docs/README.md
+!docs/ai-governor.md
+!docs/lending-req.md

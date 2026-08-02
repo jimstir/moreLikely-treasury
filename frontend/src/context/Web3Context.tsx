@@ -17,6 +17,7 @@ interface Web3State {
   error: string | null;
   connect: () => Promise<void>;
   disconnect: () => void;
+  switchNetwork: (chainId: number) => Promise<void>;
 }
 
 const defaultState: Web3State = {
@@ -31,6 +32,7 @@ const defaultState: Web3State = {
   error: null,
   connect: async () => {},
   disconnect: () => {},
+  switchNetwork: async () => {},
 };
 
 const Web3Context = createContext<Web3State>(defaultState);
@@ -40,10 +42,35 @@ export function useWeb3() {
 }
 
 // ─── Supported Networks ───
-const SUPPORTED_CHAINS: Record<number, string> = {
-  1: "Ethereum Mainnet",
-  11155111: "Sepolia Testnet",
-  31337: "Hardhat Local",
+export const SUPPORTED_CHAINS: Record<number, any> = {
+  1: {
+    chainId: "0x1",
+    chainName: "Ethereum Mainnet",
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    rpcUrls: ["https://mainnet.infura.io/v3/public"],
+    blockExplorerUrls: ["https://etherscan.io"]
+  },
+  11155111: {
+    chainId: "0xaa36a7",
+    chainName: "Sepolia Testnet",
+    nativeCurrency: { name: "Sepolia Ether", symbol: "ETH", decimals: 18 },
+    rpcUrls: ["https://rpc.sepolia.org"],
+    blockExplorerUrls: ["https://sepolia.etherscan.io"]
+  },
+  31337: {
+    chainId: "0x7a69",
+    chainName: "Hardhat Local",
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    rpcUrls: ["http://127.0.0.1:8545"],
+  },
+  // Adding Arc Testnet placeholder configuration
+  424242: {
+    chainId: "0x6793a",
+    chainName: "Arc Testnet",
+    nativeCurrency: { name: "Arc Ether", symbol: "ETH", decimals: 18 },
+    rpcUrls: ["https://rpc-testnet.arc.network"], // Placeholder RPC
+    blockExplorerUrls: ["https://explorer-testnet.arc.network"]
+  }
 };
 
 // ─── Provider Component ───
@@ -93,20 +120,50 @@ export function Web3Provider({ children, treasuryVaultAddress }: Web3ProviderPro
     [checkRole]
   );
 
+  const switchNetwork = useCallback(async (targetChainId: number) => {
+    if (typeof window === "undefined" || !(window as any).ethereum) {
+      throw new Error("No wallet detected.");
+    }
+    const ethereum = (window as any).ethereum;
+    const chainConfig = SUPPORTED_CHAINS[targetChainId];
+    
+    if (!chainConfig) {
+      throw new Error(`Unsupported chain ID: ${targetChainId}`);
+    }
+
+    try {
+      await ethereum.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: chainConfig.chainId }],
+      });
+    } catch (switchError: any) {
+      // This error code indicates that the chain has not been added to MetaMask.
+      if (switchError.code === 4902) {
+        try {
+          await ethereum.request({
+            method: "wallet_addEthereumChain",
+            params: [chainConfig],
+          });
+        } catch (addError: any) {
+          throw new Error(`Failed to add network: ${addError.message}`);
+        }
+      } else {
+        throw new Error(`Failed to switch network: ${switchError.message}`);
+      }
+    }
+  }, []);
+
   const ensureSupportedNetwork = useCallback(async (ethereum: any, currentChainId: number) => {
     if (SUPPORTED_CHAINS[currentChainId]) {
       return currentChainId;
     }
-
-    await ethereum.request({
-      method: "wallet_switchEthereumChain",
-      params: [{ chainId: "0xaa36a7" }], // Sepolia
-    });
-
+    // Default fallback to Sepolia if unsupported upon first connection
+    await switchNetwork(11155111);
+    
     const updatedProvider = new ethers.BrowserProvider(ethereum);
     const updatedNetwork = await updatedProvider.getNetwork();
     return Number(updatedNetwork.chainId);
-  }, []);
+  }, [switchNetwork]);
 
   // Connect wallet via MetaMask / injected provider
   const connect = useCallback(async () => {
@@ -237,6 +294,7 @@ export function Web3Provider({ children, treasuryVaultAddress }: Web3ProviderPro
     error,
     connect,
     disconnect,
+    switchNetwork,
   };
 
   return <Web3Context.Provider value={value}>{children}</Web3Context.Provider>;

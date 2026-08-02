@@ -22,12 +22,15 @@ interface ValidationErrors {
 }
 
 export default function CreateTreasuryWidget({ onCreated }: CreateTreasuryWidgetProps) {
-  const { provider, signer, address } = useWeb3();
+  const { provider, signer, address, switchNetwork } = useWeb3();
   const [step, setStep] = useState<"form" | "deploying" | "success">("form");
   const [formData, setFormData] = useState<FormData>({
     treasuryName: "",
     tokenName: "",
     tokenSymbol: "",
+    treasuryNetworkId: "11155111", // Default to Sepolia
+    aiNetwork: "0G Compute (Decentralized)",
+    aiModel: "0g-llama-3"
   });
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
   const [deployStatus, setDeployStatus] = useState("");
@@ -88,28 +91,16 @@ export default function CreateTreasuryWidget({ onCreated }: CreateTreasuryWidget
 
     try {
       const network = await provider?.getNetwork();
-      let targetChainId = 11155111; // Default to Sepolia (Testnet)
-      
-      const configuredNetwork = process.env.NEXT_PUBLIC_DEPLOY_NETWORK?.toLowerCase();
-      if (configuredNetwork === 'mainnet') {
-        targetChainId = 1;
-      }
-      
-      const networkName = targetChainId === 1 ? 'Ethereum Mainnet' : 'Sepolia Testnet';
+      let targetChainId = parseInt(formData.treasuryNetworkId);
       
       if (network && Number(network.chainId) !== targetChainId) {
-        if (typeof window !== "undefined" && (window as any).ethereum) {
-          await (window as any).ethereum.request({
-            method: "wallet_switchEthereumChain",
-            params: [{ chainId: `0x${targetChainId.toString(16)}` }],
-          });
-          // Wait briefly to allow wallet state to sync
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
+        setDeployStatus("Switching network in MetaMask...");
+        await switchNetwork(targetChainId);
+        // Wait briefly to allow wallet state to sync
+        await new Promise(resolve => setTimeout(resolve, 1500));
       }
     } catch (err: any) {
-      const targetNetworkName = process.env.NEXT_PUBLIC_DEPLOY_NETWORK === 'mainnet' ? 'Ethereum Mainnet' : 'Sepolia Testnet';
-      setError(`Please switch your wallet to ${targetNetworkName} to deploy.`);
+      setError(err.message || `Please switch your wallet to the selected network to deploy.`);
       return;
     }
 
@@ -185,6 +176,10 @@ export default function CreateTreasuryWidget({ onCreated }: CreateTreasuryWidget
           vaultAddress,
           tokenAddress,
           ownerAddress: address,
+          networkName: formData.treasuryNetworkId === "1" ? "Ethereum Mainnet" : formData.treasuryNetworkId === "11155111" ? "Sepolia Testnet" : "Arc Testnet",
+          chainId: parseInt(formData.treasuryNetworkId),
+          aiNetwork: formData.aiNetwork,
+          aiModel: formData.aiModel,
         }),
       });
 
@@ -267,6 +262,61 @@ export default function CreateTreasuryWidget({ onCreated }: CreateTreasuryWidget
               {validationErrors.tokenSymbol && (
                 <span className="error-message">{validationErrors.tokenSymbol}</span>
               )}
+            </div>
+          </div>
+
+          <div className={styles.row}>
+            <div className={styles.field}>
+              <label className="label" htmlFor="treasuryNetworkId">Treasury Network *</label>
+              <select
+                className="input"
+                id="treasuryNetworkId"
+                name="treasuryNetworkId"
+                value={(formData as any).treasuryNetworkId}
+                onChange={(e: any) => handleChange(e)}
+              >
+                <option value="11155111">Sepolia Testnet</option>
+                <option value="424242">Arc Testnet</option>
+                <option value="1">Ethereum Mainnet</option>
+              </select>
+            </div>
+          </div>
+
+          <div className={styles.row}>
+            <div className={styles.field}>
+              <label className="label" htmlFor="aiNetwork">AI Agent Network *</label>
+              <select
+                className="input"
+                id="aiNetwork"
+                name="aiNetwork"
+                value={(formData as any).aiNetwork}
+                onChange={(e: any) => handleChange(e)}
+              >
+                <option value="0G Compute (Decentralized)">0G Compute (Decentralized)</option>
+                <option value="Google Gemini (Centralized)">Google Gemini (Centralized)</option>
+              </select>
+            </div>
+            <div className={styles.field}>
+              <label className="label" htmlFor="aiModel">AI Model *</label>
+              <select
+                className="input"
+                id="aiModel"
+                name="aiModel"
+                value={(formData as any).aiModel}
+                onChange={(e: any) => handleChange(e)}
+              >
+                {(formData as any).aiNetwork.includes("0G") ? (
+                  <>
+                    <option value="0g-llama-3">0g-llama-3</option>
+                    <option value="0g-deepseek-v3">0g-deepseek-v3</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+                    <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+                  </>
+                )}
+              </select>
             </div>
           </div>
 

@@ -29,6 +29,10 @@ model Treasury {
   ownerId         String           
   owner           Wallet           @relation("TreasuryOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   members         TreasuryMember[] 
+  networkName     String           @default("Sepolia Testnet")
+  chainId         Int              @default(11155111)
+  aiNetwork       String           @default("0G Compute (Decentralized)")
+  aiModel         String           @default("0g-llama-3")
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   goals           TreasuryGoals?

@@ -11,6 +11,10 @@ interface CreateTreasuryRequest {
   tokenAddress: string;
   ownerAddress: string;
   baseAssetAddress?: string;
+  networkName: string;
+  chainId: number;
+  aiNetwork: string;
+  aiModel: string;
 }
 
 export async function POST(req: NextRequest) {
@@ -18,9 +22,9 @@ export async function POST(req: NextRequest) {
     const body: CreateTreasuryRequest = await req.json();
 
     // Validation
-    if (!body.name || !body.tokenName || !body.tokenSymbol || !body.vaultAddress || !body.tokenAddress || !body.ownerAddress) {
+    if (!body.name || !body.tokenName || !body.tokenSymbol || !body.vaultAddress || !body.tokenAddress || !body.ownerAddress || !body.networkName || !body.chainId || !body.aiNetwork || !body.aiModel) {
       return NextResponse.json(
-        { error: "Missing required fields: name, tokenName, tokenSymbol, vaultAddress, tokenAddress, ownerAddress" },
+        { error: "Missing required fields: name, tokenName, tokenSymbol, vaultAddress, tokenAddress, ownerAddress, networkName, chainId, aiNetwork, aiModel" },
         { status: 400 }
       );
     }
@@ -87,6 +91,10 @@ export async function POST(req: NextRequest) {
         tokenAddress: body.tokenAddress,
         ownerAddress: body.ownerAddress.toLowerCase(),
         ownerId: ownerWallet.id,
+        networkName: body.networkName,
+        chainId: body.chainId,
+        aiNetwork: body.aiNetwork,
+        aiModel: body.aiModel,
       },
     });
 

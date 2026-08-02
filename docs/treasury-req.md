@@ -53,19 +53,55 @@ This specification outlines the components, data models, and on-chain interactio
   - **AI Network Selection:** The owner selects which AI network to host the agent on. The `GovernorControlPanel` presents a dropdown/selector with supported AI networks. **0G Compute Network** is the default and first supported network. The architecture supports additional networks (e.g. Gemini, OpenAI, Anthropic) as they are integrated — each network adapter implements the same agent deployment and tool registration interface, so the agent module and tool server remain unchanged regardless of which network is chosen. The selected network and its configuration (API keys, model name, endpoint URL) are saved to the database and used for all subsequent agent invocations.
   - **Invocation Frequency:** The owner configures how often the agent is invoked to run a decision cycle. Options include predefined intervals (e.g. "Every 1 hour", "Every 6 hours", "Once a day", "Once a week") or a custom cron expression. This controls agent operating cost — each invocation incurs LLM inference fees on the selected AI network. The frequency is saved to the database and enforced by the backend scheduler. The owner can update the frequency at any time from the `GovernorControlPanel` without redeploying the agent.
   - Deploys the AI Owner Agent as an autonomous LLM agent on the selected AI network. The agent is an LLM that reasons independently and calls tools exposed by this project to interact with the treasury and market. The AI Owner Agent should be its own module to make future integration easy.
-- **Agent Wallet & Gas Funding:**
-  - The backend generates an EOA wallet for the agent. The EOA private key is stored securely on the backend server and never exposed to the AI network.
-  - **Smart Wallet Gas Escrow (`AgentGasEscrow.sol`):** To limit exposure, the agent EOA is not pre-funded. Instead, the owner deploys a custom `AgentGasEscrow` smart contract that holds the gas budget and is tightly coupled with the `TreasuryVault`. The escrow contract enforces strict on-chain checks before releasing small amounts of gas (e.g., 0.01 ETH) to the agent EOA:
-    - **Execution Gas:** Before releasing gas for `executeSwap`, the escrow checks the `TreasuryVault` to verify that `TreasuryVault.vote(proposalId) == true` and that the proposal has not already been executed.
-    - **Proposal Gas:** Before releasing gas for `proposalOpen`, the escrow checks a time-based rate limit that matches the owner-configured agent invocation frequency (e.g., if the agent runs once a day, the contract only releases gas for a new proposal once every 24 hours).
+- **Agent Funding & Security Safeguards:**
+  - **Master Platform Wallet (Execution):** To optimize key management, the platform backend uses a **single Master Platform EOA** to submit transactions for all managed AI agents.
+  - **Ethereum Gas — Transaction Forwarder (`AgentGasEscrow.sol`):** The Master Platform Wallet has zero authority over the treasury. Instead, the owner deploys a custom `AgentGasEscrow` smart contract that is registered as the authorized user on the `TreasuryVault`. The escrow contract acts as a secure transaction forwarder and gas paymaster:
+    - **Execution & Gas Refund:** The Master Platform Wallet submits a transaction to the `AgentGasEscrow` (paying the upfront gas fee). The escrow checks the on-chain rules (e.g., verifying that `TreasuryVault.vote(proposalId) == true`). If valid, the escrow forwards the call to the vault. Finally, the escrow calculates the gas used and refunds the Master Platform Wallet from the owner's deposited escrow balance.
+    - **Rate Limiting:** For opening new proposals, the escrow enforces a time-based rate limit matching the agent's configured invocation frequency.
     - **Kill Switch:** The owner can freeze or drain the escrow at any time via MetaMask.
-  - This architecture ensures that neither the backend nor the agent has absolute authority over the gas budget. A compromised server cannot drain the escrow because it cannot fake an approved proposal on-chain or bypass the proposal rate limit.
-  - The owner can monitor the smart wallet balance and agent gas consumption from the `GovernorControlPanel` dashboard, and top up the smart wallet via MetaMask at any time.
+  - **LLM Inference Billing — Decentralized Ledger:** The backend does not hold the owner's crypto funds to pay for AI compute. Instead, the owner uses their MetaMask via the `GovernorControlPanel` to deposit tokens into the AI provider's on-chain billing ledger. The backend is provisioned with an API Secret tied to this ledger and utilizes the `@0gfoundation/0g-compute-ts-sdk` (`ComputeClient`) to seamlessly execute function-calling inferences via the decentralized nodes.
+  - **Security Sandboxing:** This architecture ensures a hacked backend server cannot drain the owner's crypto funds. If the Master Platform Wallet key is stolen, the hacker possesses no authority on the `TreasuryVault` and would only burn their own ETH attempting to submit unauthorized requests to the escrow.
+  - The owner can monitor the smart wallet gas balance, the AI provider ledger balance, and the agent's consumption rates from the `GovernorControlPanel` dashboard, topping them up via MetaMask at any time.
 - **Backend / On-chain Sync:**
-  - Registers the agent's EOA as `attestationSigner` on `AssetSwapPolicy.sol` and as the `_tOwner` on `TreasuryVault`.
+  - Registers the `AgentGasEscrow` contract as the authorized user (`_authUsers`) on `TreasuryVault` (the Master Platform EOA is never authorized directly).
   - Configures the agent's system prompt with the treasury address, policy contract address, treasury goals, and approved tokens.
-  - Saves the selected AI network configuration (API keys, model name, endpoint URL), invocation frequency, and smart wallet address to the database.
   - Initializes the invocation scheduler at the owner-configured frequency.
+
+### 4.1 AI Governor Deployment Approaches
+
+The AI Governor architecture is designed to be highly flexible, allowing Treasury Owners to deploy the agent with varying degrees of decentralization. Crucially, **shareholders do not need to check Etherscan to verify the agent's setup.** The `GovernorControlPanel` dashboard will allow users to connect their wallet and make direct view function calls to verify the `AgentGasEscrow` and the authorized infrastructure.
+
+#### 1. Fully Managed (Single Master Platform Wallet)
+- **Setup:** The platform handles the server infrastructure and utilizes a single Master Platform EOA to submit transactions for all managed agents. The owner deploys the `AgentGasEscrow` which strictly forwards valid calls from this master wallet. The owner selects whether the agent's brain uses **0G Compute** (decentralized) or **Gemini** (centralized) via the deployment UI.
+  - *Isolated Signer Architecture:* The platform MUST support configuring the Master Platform Wallet on a completely separate, isolated server (configured via a configuration file or environment variables). By running the wallet as an isolated microservice, a breach of the main web application does not instantly expose the Master Platform Wallet's private key.
+- **Verification (Live Checks):** 
+  - The dashboard directly queries and displays the `AgentGasEscrow` view functions so shareholders can monitor the agent's gas budget, rate limits, and authorized EOA address.
+  - To prove the LLM is actively making decisions, the dashboard MUST display the **inference receipts** of the agent's most recent requests.
+  - If 0G Compute is used, the 0G Network Job ID / cryptographic receipt is displayed.
+  - If Gemini is used (which lacks a decentralized receipt), the platform MUST generate an **Internal Inference Receipt** that mimics the 0G schema (see schema below) and publish it for transparency.
+- **On-Chain Proof:** With every LLM-initiated on-chain transaction (e.g., calling `proposalOpen` or `proposalClose` via the `AgentGasEscrow`), the owner/agent SHOULD attach or publish the corresponding inference receipt. This links the on-chain action to the off-chain AI reasoning.
+
+**Inference Receipt Schema Example:**
+```json
+{
+  "receiptId": "uuid-or-tx-hash",
+  "provider": "0G-Compute | Platform-Gemini",
+  "model": "glm-5.2 | gemini-1.5-pro",
+  "timestamp": 1718293041,
+  "promptHash": "0x...",
+  "responseHash": "0x...",
+  "computeCost": "0.05"
+}
+```
+
+#### 2. Self-Hosted / Bring Your Own Infrastructure (Hybrid & Sovereign)
+- **Setup:** The owner does not trust the platform's centralized servers. The owner downloads the open-source agent client and runs it on their own private server using their own self-generated EOA wallet. The owner then connects their custom EOA to the `AgentGasEscrow` via the dashboard.
+- **Agent Client Functions:** To successfully run a self-hosted agent, the owner's server MUST implement and continuously run the core **Decision Loop**. This requires running instances of:
+  - `IStateProvider`: To query the TreasuryVault for portfolio state and goals.
+  - `ILLMProvider`: To authenticate with the chosen LLM network (0G or Gemini) and request inferences.
+  - `RiskEngine`: To locally verify the LLM's recommended trades against the treasury's safety rules.
+  - `IProposer` / `ITradeExecutor`: To sign and submit the actual transactions to the blockchain using the self-hosted EOA.
+- **Verification:** The dashboard displays the self-hosted EOA address registered in the `AgentGasEscrow`. The owner publishes an Architecture Manifest detailing their self-hosted setup, and publishes the inference receipts just like the managed approach.
 
 
 ### 5. AI Agent Architecture (Autonomous Operation)
@@ -146,7 +182,27 @@ The following tools are implemented as local functions on the backend. They are 
 - **Returns:** `{ success: boolean, txHash: string }`
 - **Implementation:** Calls the appropriate close/cancel function on `TreasuryVault`.
 
-#### Agent Reasoning Flow
+#### 2. Supported Networks & Integrations
+
+The platform is designed to decouple the blockchain execution layer from the AI reasoning layer. To achieve this, the architecture explicitly defines supported networks across these two domains.
+
+#### A. Treasury Blockchain Networks (Smart Contracts)
+These networks host the `TreasuryVault`, `TreasuryToken`, `AssetSwapPolicy`, and the `SmartWallet` contracts. The UI `GovernorControlPanel` interacts with these networks via standard Web3 providers (e.g. Wagmi/Viem).
+- **Ethereum Mainnet**: The primary target for high-value production treasuries.
+- **Ethereum Testnet (Sepolia/Holesky)**: Used for robust staging and testing of new governance features.
+- **Arc Testnet**: A specialized L2/AppChain testnet supported for rapid, low-cost treasury deployments and testing.
+
+#### B. AI Networks (Compute & Storage)
+These networks host the decentralized AI reasoning loops and immutable audit trails. The backend `AgentRunner` interfaces with these networks using specific SDKs.
+- **0G Mainnet (Compute & Storage)**: The primary decentralized AI network. The backend uses `@0gfoundation/0g-compute-ts-sdk` for LLM inferences and `@0gfoundation/0g-storage-ts-sdk` to persist `DecisionReport` transcripts to the storage nodes.
+- **0G Testnet**: Available for developers and test treasuries to run the agent loop without expending real ZG tokens for compute/storage fees.
+- **Gemini (Centralized Fallback)**: A centralized option utilizing Google's Gemini API for inference, with the platform simulating the storage of internal receipts.
+
+The `GovernorControlPanel` UI exposes these options, allowing treasury owners to explicitly configure their target Treasury Blockchain (where the vault lives) and their AI Environment (where the agent lives) independently.
+
+---
+
+### 3. Agent & Orchestrator Flow
 The agent is free to call tools in whatever order its reasoning dictates. A typical flow might look like:
 1. Call `read_treasury_state` to understand current holdings.
 2. Call `get_treasury_goals` to understand constraints.
@@ -174,8 +230,9 @@ Each stored transcript includes:
   - Final LLM response (the agent's summary/conclusion for the tick)
 - **On-chain actions:** Any transaction hashes produced during tool execution (proposals opened, swaps executed, proposals closed), linked to the specific tool call that triggered them.
 - **Error log:** Any tool execution failures, AI network errors, or on-chain transaction reverts encountered during the invocation.
+- **0G Storage Layer (Optional):** The owner can opt-in via the deployment UI to persist the full DecisionReport (including transcripts and rationale) directly to the **0G Storage Network** for decentralized permanence. This provides an immutable audit trail but incurs additional ZG token storage costs. The backend utilizes `@0gfoundation/0g-storage-ts-sdk` (specifically the `Indexer.upload` flow) to chunk the JSON file and returns a decentralized `dataRoot` receipt hash. The UI must display warnings about this increased operational cost.
 
-Transcripts are stored in the `AgentInvocation` database model and linked to the treasury. They are surfaced to owners and stakeholders through the `AuditInteractionsWidget` (see §6). When a proposal is created or executed during an invocation, the transcript is cross-linked to the `DecisionReport` for that proposal, providing a complete audit chain from the agent's first observation through to the on-chain action.
+Transcripts are stored in the `AgentInvocation` database model and linked to the treasury. They are surfaced to owners and stakeholders through the `AuditInteractionsWidget` (see §6). When a proposal is created or executed during an invocation, the transcript is cross-linked to the `DecisionReport` for that proposal (storing the 0G `dataRoot` if applicable), providing a complete audit chain from the agent's first observation through to the on-chain action.
 
 #### On-Chain Safety Boundary
 Regardless of the agent's reasoning, the smart contracts enforce hard safety rules:
@@ -261,4 +318,5 @@ The AI agent logic is implemented as a backend module (not API endpoints). The m
   - Interacts directly with the Uniswap Router/APIs to manage buying and selling assets.
   - Receives approved funds from the vault and executes atomic swap routes.
   - **Production vs. Testnet Targets:** While automated unit tests and local fork simulations utilize the Ethereum Sepolia testnet environment and WETH/USDC addresses, the production deployment of the application and policy contract MUST target the **Uniswap Ethereum Mainnet** implementation (using mainnet token addresses and the mainnet Universal Router).
+
 
