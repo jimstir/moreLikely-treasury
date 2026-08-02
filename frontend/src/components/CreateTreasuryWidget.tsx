@@ -19,7 +19,14 @@ interface ValidationErrors {
   treasuryName?: string;
   tokenName?: string;
   tokenSymbol?: string;
+  joinTokenAddress?: string;
 }
+
+const DEFAULT_USDC_ADDRESSES: Record<string, string> = {
+  "1": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", // Mainnet USDC
+  "11155111": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238", // Sepolia USDC
+  "424242": "0x0000000000000000000000000000000000000000" // Arc Testnet dummy
+};
 
 export default function CreateTreasuryWidget({ onCreated }: CreateTreasuryWidgetProps) {
   const { provider, signer, address, switchNetwork } = useWeb3();
@@ -29,6 +36,7 @@ export default function CreateTreasuryWidget({ onCreated }: CreateTreasuryWidget
     tokenName: "",
     tokenSymbol: "",
     treasuryNetworkId: "11155111", // Default to Sepolia
+    joinTokenAddress: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238", // Default USDC on Sepolia
     aiNetwork: "0G Compute (Decentralized)",
     aiModel: "0g-llama-3"
   });
@@ -41,10 +49,19 @@ export default function CreateTreasuryWidget({ onCreated }: CreateTreasuryWidget
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-    // Clear validation error for this field when user starts typing
+    
+    setFormData((prev) => {
+      const newData = { ...prev, [name]: value };
+      
+      // Auto-update default USDC if network changes and joinTokenAddress wasn't manually edited
+      if (name === "treasuryNetworkId") {
+        newData.joinTokenAddress = DEFAULT_USDC_ADDRESSES[value] || "";
+      }
+      return newData;
+    });
+
     if (validationErrors[name as keyof ValidationErrors]) {
       setValidationErrors((prev) => ({ ...prev, [name]: undefined }));
     }
@@ -77,6 +94,12 @@ export default function CreateTreasuryWidget({ onCreated }: CreateTreasuryWidget
       errors.tokenSymbol = "Token symbol must be less than 20 characters";
     } else if (!/^[A-Z0-9]+$/.test(formData.tokenSymbol.trim())) {
       errors.tokenSymbol = "Token symbol must contain only uppercase letters and numbers";
+    }
+
+    if (!formData.joinTokenAddress?.trim()) {
+      errors.joinTokenAddress = "Join Token address is required";
+    } else if (!/^0x[a-fA-F0-9]{40}$/.test(formData.joinTokenAddress.trim())) {
+      errors.joinTokenAddress = "Must be a valid EVM address";
     }
 
     setValidationErrors(errors);
@@ -163,6 +186,12 @@ export default function CreateTreasuryWidget({ onCreated }: CreateTreasuryWidget
       const linkTx = await tokenContract.setVault(vaultAddress);
       await linkTx.wait();
 
+      if (formData.joinTokenAddress?.trim()) {
+        setDeployStatus("Approving Join Token…");
+        const approveTx = await vaultContract.newToken(formData.joinTokenAddress.trim());
+        await approveTx.wait();
+      }
+
       setDeployStatus("Saving treasury to database…");
       const response = await fetch("/api/treasury/create", {
         method: "POST",
@@ -175,6 +204,7 @@ export default function CreateTreasuryWidget({ onCreated }: CreateTreasuryWidget
           tokenSymbol: formData.tokenSymbol.trim(),
           vaultAddress,
           tokenAddress,
+          baseAssetAddress: formData.joinTokenAddress?.trim() || null,
           ownerAddress: address,
           networkName: formData.treasuryNetworkId === "1" ? "Ethereum Mainnet" : formData.treasuryNetworkId === "11155111" ? "Sepolia Testnet" : "Arc Testnet",
           chainId: parseInt(formData.treasuryNetworkId),
@@ -273,12 +303,26 @@ export default function CreateTreasuryWidget({ onCreated }: CreateTreasuryWidget
                 id="treasuryNetworkId"
                 name="treasuryNetworkId"
                 value={(formData as any).treasuryNetworkId}
-                onChange={(e: any) => handleChange(e)}
+                onChange={handleChange}
               >
                 <option value="11155111">Sepolia Testnet</option>
                 <option value="424242">Arc Testnet</option>
                 <option value="1">Ethereum Mainnet</option>
               </select>
+            </div>
+            <div className={styles.field}>
+              <label className="label" htmlFor="joinTokenAddress">Join Token Address (Base Asset) *</label>
+              <input
+                className={`input ${validationErrors.joinTokenAddress ? "input-error" : ""}`}
+                id="joinTokenAddress"
+                name="joinTokenAddress"
+                placeholder="e.g. 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+                value={(formData as any).joinTokenAddress}
+                onChange={handleChange}
+              />
+              {validationErrors.joinTokenAddress && (
+                <span className="error-message">{validationErrors.joinTokenAddress}</span>
+              )}
             </div>
           </div>
 
@@ -290,7 +334,7 @@ export default function CreateTreasuryWidget({ onCreated }: CreateTreasuryWidget
                 id="aiNetwork"
                 name="aiNetwork"
                 value={(formData as any).aiNetwork}
-                onChange={(e: any) => handleChange(e)}
+                onChange={handleChange}
               >
                 <option value="0G Compute (Decentralized)">0G Compute (Decentralized)</option>
                 <option value="Google Gemini (Centralized)">Google Gemini (Centralized)</option>
@@ -303,7 +347,7 @@ export default function CreateTreasuryWidget({ onCreated }: CreateTreasuryWidget
                 id="aiModel"
                 name="aiModel"
                 value={(formData as any).aiModel}
-                onChange={(e: any) => handleChange(e)}
+                onChange={handleChange}
               >
                 {(formData as any).aiNetwork.includes("0G") ? (
                   <>

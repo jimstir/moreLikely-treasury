@@ -97,7 +97,10 @@ contract TreasuryVault is ERC4626 {
 
     /** @dev Primary authorized user modifier */
     modifier auth() {
-        require(msg.sender == _tOwner || _authUsers[msg.sender], "Not authorized");
+        require(
+            msg.sender == _tOwner || _authUsers[msg.sender],
+            "Not authorized"
+        );
         _;
     }
 
@@ -231,13 +234,14 @@ contract TreasuryVault is ERC4626 {
     }
 
     /** @dev Check amount owed to the treasury by a proposal
-    * @return 
-    
-    function owed(uint256 proposal) public view returns(uint256){
-        uint256 amount = proposalBook[num].withdraw - proposalBook[num].deposit;
-        return(amount);
+     * @return
+     */
+    function owed(uint256 num) public view returns (uint256) {
+        uint256 amount = proposalBook[num].withdraw -
+            proposalBook[num].deposits;
+        return (amount);
     }
-    */
+
     /**  @dev Check if proposal was executed after approval
      * @return
      */

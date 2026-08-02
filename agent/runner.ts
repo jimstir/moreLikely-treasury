@@ -54,13 +54,22 @@ export class AgentRunner {
             if (llmResponse.toolCalls && llmResponse.toolCalls.length > 0) {
                 for (const toolCall of llmResponse.toolCalls) {
                     console.log(`[AgentRunner] Executing tool: ${toolCall.toolName}`);
-                    const toolResult = await this.executeTool(toolCall);
-                    
-                    conversationHistory.push({
-                        role: 'tool',
-                        name: toolCall.toolName,
-                        content: JSON.stringify(toolResult)
-                    });
+                    try {
+                        const toolResult = await this.executeTool(toolCall);
+                        conversationHistory.push({
+                            role: 'tool',
+                            name: toolCall.toolName,
+                            content: JSON.stringify(toolResult)
+                        });
+                    } catch (error: any) {
+                        if (error.message.startsWith("FIRE_AND_SLEEP:")) {
+                            console.log("[AgentRunner] Gracefully persisting memory to database and terminating process to save 0G compute credits.");
+                            hasFinished = true;
+                            break; // break out of tool loop
+                        } else {
+                            throw error;
+                        }
+                    }
                 }
             } else {
                 console.log(`[AgentRunner] AI concluded reasoning: ${llmResponse.textResponse}`);
@@ -79,6 +88,16 @@ export class AgentRunner {
                 return await this.stateProvider.getTreasuryState();
             case 'get_market_data':
                 return await this.stateProvider.getMarketData([toolCall.parameters.token]);
+            case 'execute_trade':
+                // Note: The actual call to aiAgent.proposeTrade() would happen here
+                // We simulate the Circle API returning a transactionId immediately
+                const txId = "circle-tx-" + Math.floor(Math.random() * 1000000);
+                console.log(`[AgentRunner] Tool execute_trade called. Circle API returned TxId: ${txId}`);
+                console.log(`[AgentRunner] 🔥 FIRE AND SLEEP INITIATED 🔥`);
+                console.log(`[AgentRunner] Shutting down agent loop. Webhook at /api/webhooks/circle will awake agent when ${txId} confirms.`);
+                
+                // Throw an exception or return a special flag to break the core loop and shut down compute
+                throw new Error(`FIRE_AND_SLEEP:${txId}`);
             default:
                 return { error: `Tool ${toolCall.toolName} not implemented or unrecognized.` };
         }

@@ -54,13 +54,13 @@ This specification outlines the components, data models, and on-chain interactio
   - **Invocation Frequency:** The owner configures how often the agent is invoked to run a decision cycle. Options include predefined intervals (e.g. "Every 1 hour", "Every 6 hours", "Once a day", "Once a week") or a custom cron expression. This controls agent operating cost — each invocation incurs LLM inference fees on the selected AI network. The frequency is saved to the database and enforced by the backend scheduler. The owner can update the frequency at any time from the `GovernorControlPanel` without redeploying the agent.
   - Deploys the AI Owner Agent as an autonomous LLM agent on the selected AI network. The agent is an LLM that reasons independently and calls tools exposed by this project to interact with the treasury and market. The AI Owner Agent should be its own module to make future integration easy.
 - **Agent Funding & Security Safeguards:**
-  - **Master Platform Wallet (Execution):** To optimize key management, the platform backend uses a **single Master Platform EOA** to submit transactions for all managed AI agents.
-  - **Ethereum Gas — Transaction Forwarder (`AgentGasEscrow.sol`):** The Master Platform Wallet has zero authority over the treasury. Instead, the owner deploys a custom `AgentGasEscrow` smart contract that is registered as the authorized user on the `TreasuryVault`. The escrow contract acts as a secure transaction forwarder and gas paymaster:
+  - **Master Platform Wallet (Execution):** To optimize key management and security, the platform backend uses the **Circle Developer-Controlled Wallets API (App Kits)** to submit transactions for all managed AI agents, avoiding the need to manage raw EOA private keys locally on a Node.js server.
+  - **Ethereum Gas — Transaction Forwarder (`AgentGasEscrow.sol`):** The Circle Master Platform Wallet has zero authority over the treasury. Instead, the owner deploys a custom `AgentGasEscrow` smart contract that is registered as the authorized user on the `TreasuryVault`. The escrow contract acts as a secure transaction forwarder and gas paymaster:
     - **Execution & Gas Refund:** The Master Platform Wallet submits a transaction to the `AgentGasEscrow` (paying the upfront gas fee). The escrow checks the on-chain rules (e.g., verifying that `TreasuryVault.vote(proposalId) == true`). If valid, the escrow forwards the call to the vault. Finally, the escrow calculates the gas used and refunds the Master Platform Wallet from the owner's deposited escrow balance.
     - **Rate Limiting:** For opening new proposals, the escrow enforces a time-based rate limit matching the agent's configured invocation frequency.
     - **Kill Switch:** The owner can freeze or drain the escrow at any time via MetaMask.
   - **LLM Inference Billing — Decentralized Ledger:** The backend does not hold the owner's crypto funds to pay for AI compute. Instead, the owner uses their MetaMask via the `GovernorControlPanel` to deposit tokens into the AI provider's on-chain billing ledger. The backend is provisioned with an API Secret tied to this ledger and utilizes the `@0gfoundation/0g-compute-ts-sdk` (`ComputeClient`) to seamlessly execute function-calling inferences via the decentralized nodes.
-  - **Security Sandboxing:** This architecture ensures a hacked backend server cannot drain the owner's crypto funds. If the Master Platform Wallet key is stolen, the hacker possesses no authority on the `TreasuryVault` and would only burn their own ETH attempting to submit unauthorized requests to the escrow.
+  - **Security Sandboxing:** This architecture ensures a hacked backend server cannot drain the owner's crypto funds. Since the backend uses Circle's MPC infrastructure, the server only holds API keys. Even if the API keys are stolen, the hacker possesses no authority on the `TreasuryVault` and would only burn their own ETH attempting to submit unauthorized requests to the escrow.
   - The owner can monitor the smart wallet gas balance, the AI provider ledger balance, and the agent's consumption rates from the `GovernorControlPanel` dashboard, topping them up via MetaMask at any time.
 - **Backend / On-chain Sync:**
   - Registers the `AgentGasEscrow` contract as the authorized user (`_authUsers`) on `TreasuryVault` (the Master Platform EOA is never authorized directly).
@@ -71,9 +71,9 @@ This specification outlines the components, data models, and on-chain interactio
 
 The AI Governor architecture is designed to be highly flexible, allowing Treasury Owners to deploy the agent with varying degrees of decentralization. Crucially, **shareholders do not need to check Etherscan to verify the agent's setup.** The `GovernorControlPanel` dashboard will allow users to connect their wallet and make direct view function calls to verify the `AgentGasEscrow` and the authorized infrastructure.
 
-#### 1. Fully Managed (Single Master Platform Wallet)
-- **Setup:** The platform handles the server infrastructure and utilizes a single Master Platform EOA to submit transactions for all managed agents. The owner deploys the `AgentGasEscrow` which strictly forwards valid calls from this master wallet. The owner selects whether the agent's brain uses **0G Compute** (decentralized) or **Gemini** (centralized) via the deployment UI.
-  - *Isolated Signer Architecture:* The platform MUST support configuring the Master Platform Wallet on a completely separate, isolated server (configured via a configuration file or environment variables). By running the wallet as an isolated microservice, a breach of the main web application does not instantly expose the Master Platform Wallet's private key.
+#### 1. Fully Managed (Circle Programmable Wallets)
+  - *No Local Private Keys:* The platform uses Circle Developer-Controlled Wallets to manage transaction signing securely via Multi-Party Computation (MPC).
+  - *Isolated Signer Architecture:* The platform configures the Circle SDK securely. By using API keys and Entity Secrets rather than raw EOA private keys, a breach of the main web application does not instantly expose raw cryptography.
 - **Verification (Live Checks):** 
   - The dashboard directly queries and displays the `AgentGasEscrow` view functions so shareholders can monitor the agent's gas budget, rate limits, and authorized EOA address.
   - To prove the LLM is actively making decisions, the dashboard MUST display the **inference receipts** of the agent's most recent requests.
@@ -106,7 +106,7 @@ The AI Governor architecture is designed to be highly flexible, allowing Treasur
 
 ### 5. AI Agent Architecture (Autonomous Operation)
 - **Component:** `AI Owner Agent` — an autonomous LLM agent running on the owner's selected AI network (0G Compute Network by default).
-- **Architecture:** The backend drives the agent loop. On each scheduled invocation, the backend sends an inference request to the AI network (e.g. 0G Compute `/chat/completions`) containing the system prompt and tool definitions. The LLM responds with tool call requests. The backend executes each requested tool locally (reading on-chain state, fetching market data, submitting transactions using the stored EOA private key), sends the tool results back to the LLM, and continues the conversation until the LLM returns a final response with no further tool calls. The LLM never directly accesses the backend server or the EOA private key — it only reasons and requests tool calls; the backend handles all execution.
+- **Architecture:** The backend drives the agent loop. On each scheduled invocation, the backend sends an inference request to the AI network (e.g. 0G Compute `/chat/completions`) containing the system prompt and tool definitions. The LLM responds with tool call requests. The backend executes each requested tool locally (reading on-chain state, fetching market data, submitting transactions via the Circle Developer-Controlled Wallet API), sends the tool results back to the LLM, and continues the conversation until the LLM returns a final response with no further tool calls. The LLM never directly accesses the backend server or the API credentials — it only reasons and requests tool calls; the backend handles all execution.
 - **System Prompt Context:** The agent receives its treasury address, policy contract address, treasury goals, and the set of approved tokens. The system prompt instructs the agent to manage the treasury according to stakeholder-defined goals.
 
 #### Invocation Loop
@@ -156,7 +156,7 @@ The following tools are implemented as local functions on the backend. They are 
 - **Description:** Opens a new trade proposal on-chain via `TreasuryVault.proposalOpen()`. The proposal enters the voting queue for stakeholder approval.
 - **Parameters:** `{ treasuryAddress: string, policyAddress: string, tokenIn: string, tokenOut: string, amountIn: string, rationale: string }`
 - **Returns:** `{ success: boolean, proposalId: number, txHash: string }`
-- **Implementation:** Submits an on-chain transaction using the agent's EOA private key stored on the backend.
+- **Implementation:** Submits an on-chain transaction via the Circle Developer-Controlled Wallet SDK.
 
 ##### 7. `get_voting_status`
 - **Description:** Returns the current voting tally for an open proposal — total votes for, total votes against, number of voters, and whether the voting interval has ended.
@@ -168,7 +168,7 @@ The following tools are implemented as local functions on the backend. They are 
 - **Description:** Executes an approved swap proposal. Generates the agent's ECDSA attestation signature over the voting outcome, calls `proposalApproved` on `TreasuryVault` to transfer funds to the policy contract, then calls `executeSwap` on `AssetSwapPolicy` with the Uniswap calldata.
 - **Parameters:** `{ proposalId: number, tokenIn: string, tokenOut: string, amountIn: string, totalVotesFor: string, totalVotesAgainst: string, swapCallData: string }`
 - **Returns:** `{ success: boolean, txHash: string, amountOut: string }`
-- **Implementation:** Signs the attestation payload using the agent's EOA private key on the backend and submits the on-chain transaction. The `AssetSwapPolicy` contract verifies the attestation via `ecrecover` before executing the Uniswap swap.
+- **Implementation:** Generates the attestation payload and submits the on-chain transaction via the Circle Developer-Controlled Wallet SDK. The `AssetSwapPolicy` contract verifies the attestation via `ecrecover` before executing the Uniswap swap.
 
 ##### 9. `get_proposals`
 - **Description:** Returns all proposals for the treasury, filtered by status. Used by the agent to monitor open proposals, track execution, and decide whether to close stale proposals.
@@ -291,7 +291,7 @@ The agent cannot bypass these on-chain checks. The tools are the agent's interfa
 The AI agent logic is implemented as a backend module (not API endpoints). The module contains:
 
 - **Agent Runner** — The core invocation loop. Called by the backend scheduler at the owner-configured frequency. Constructs the inference request (system prompt + tool definitions + conversation history), sends it to the selected AI network, processes tool call responses, executes tools locally, and loops until the LLM completes. Stores the full conversation transcript on completion.
-- **Tool Functions** — Local implementations of each tool (`read_treasury_state`, `get_market_data`, `check_risk`, `propose_trade`, `execute_swap`, etc.). Each function reads on-chain state, queries external APIs, or submits transactions using the agent's EOA private key stored on the server.
+- **Tool Functions** — Local implementations of each tool (`read_treasury_state`, `get_market_data`, `check_risk`, `propose_trade`, `execute_swap`, etc.). Each function reads on-chain state, queries external APIs, or submits transactions using the Circle Developer-Controlled Wallet API.
 - **AI Network Adapters** — Pluggable adapters for each supported AI network (0G Compute, Gemini, OpenAI, etc.). Each adapter translates the tool definitions and conversation messages into the network's specific API format (e.g. OpenAI-compatible chat completions with `tools` parameter). New networks are added by implementing a new adapter.
 - **Conversation Logger** — Persists the complete request-response transcript of each invocation to the `AgentInvocation` database model. Cross-links transcripts to proposals and `DecisionReport` records for audit.
 

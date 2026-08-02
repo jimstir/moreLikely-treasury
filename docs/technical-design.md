@@ -147,7 +147,7 @@ sequenceDiagram
    - `domain`: `{ name: "SmartTreasuryVoting", version: "1", chainId: X, verifyingContract: Address }`
    - `types`: `{ Vote: [{ name: "proposalId", type: "uint256" }, { name: "support", type: "bool" }, { name: "voter", type: "address" }] }`
 2. **Aggregated Attestation**:
-   - The AI Owner Agent acts as the authorized validator (its EOA address is registered as `attestationSigner` in `AssetSwapPolicy.sol`).
+   - The AI Owner Agent acts as the authorized validator (its associated Circle Wallet ID or EOA address is registered as `attestationSigner` in `AssetSwapPolicy.sol`).
    - When the voting window closes, the agent signs the outcome payload: `keccak256(abi.encodePacked(proposalId, totalVotesFor, totalVotesAgainst, passed))`.
    - The transaction submitted to the contract passes these parameters along with the signature. The contract executes `ecrecover` to confirm the authenticity of the attestation before executing the swap.
 
@@ -253,16 +253,16 @@ interface IAssetSwapPolicy {
 
 ## 6. AI Governor Wallet Architecture (Transaction Forwarder)
 
-To optimize key management and maximize security, the AI Governor utilizes a **Transaction Forwarder** smart wallet pattern (`AgentGasEscrow.sol`). The platform backend manages a single Master Platform Wallet to submit transactions for all agents, while the `AgentGasEscrow` holds the individual treasury's gas budget and enforces security policies on-chain.
+To optimize key management and maximize security, the AI Governor utilizes a **Transaction Forwarder** smart wallet pattern (`AgentGasEscrow.sol`). The platform backend manages a single Master Platform Wallet via the **Circle Developer-Controlled Wallets API (App Kits)** to submit transactions via Multi-Party Computation (MPC) for all agents, while the `AgentGasEscrow` holds the individual treasury's gas budget and enforces security policies on-chain.
 
 ### Wallet Implementation Flow
 1. **Deployment & Authorization:** The treasury owner deploys the `AgentGasEscrow` contract and funds it with ETH. The `AgentGasEscrow` is then registered as an authorized user (`_authUsers`) on the `TreasuryVault`.
-2. **Relaying:** When the AI decides to execute an action, the single Master Platform Wallet submits the transaction directly to the `AgentGasEscrow` and pays the initial Ethereum network gas fee.
+2. **Relaying:** When the AI decides to execute an action, the Master Platform Wallet (via Circle API) submits the transaction directly to the `AgentGasEscrow` and pays the initial Ethereum network gas fee.
 3. **Execution & Refund:** The `AgentGasEscrow` validates the request, forwards the call to the `TreasuryVault`, and finally refunds the exact gas cost back to the Master Platform Wallet from the owner's deposited ETH balance.
 
 ### Requirements for a Transfer (Smart Wallet Rules)
 Before the `AgentGasEscrow` will forward a transaction to the `TreasuryVault` or `AssetSwapPolicy` and refund gas, it MUST verify the following rules on-chain:
-- **Caller Verification:** The `msg.sender` calling the escrow MUST be the designated Master Platform Wallet address.
+- **Caller Verification:** The `msg.sender` calling the escrow MUST be the designated Circle Master Platform Wallet address.
 - **Proposal Gas (Rate Limiting):** If the forward request is to open a new proposal (`proposalOpen`), the escrow MUST check its internal timestamp to enforce a rate limit (e.g., minimum 24 hours since the last proposal opened).
 - **Execution Gas (State Validation):** If the forward request is to execute a trade (`executeSwap` / `proposalApproved`), the escrow MUST query the `TreasuryVault` to verify that `TreasuryVault.vote(proposalId) == true` (the proposal passed) and that it has not already been executed.
 - **Gas Limit Cap:** The escrow SHOULD enforce a maximum gas price or gas limit per transaction to prevent the Master Platform Wallet from maliciously or accidentally draining the escrow via inflated gas fees.

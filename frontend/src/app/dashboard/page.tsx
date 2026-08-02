@@ -175,10 +175,15 @@ export default function DashboardPage() {
                   
                   <div style={{ fontSize: "14px", color: "var(--foreground-muted)" }}>
                     <div style={{ marginBottom: "5px" }}>
+                      <strong>Join Token:</strong> <span className={styles.addressMono}>
+                        {t.baseAssetAddress ? `${t.baseAssetAddress.slice(0,6)}...${t.baseAssetAddress.slice(-4)}` : "None"}
+                      </span>
+                    </div>
+                    <div style={{ marginBottom: "5px" }}>
                       <strong>Vault:</strong> <span className={styles.addressMono}>{t.address.slice(0,6)}...{t.address.slice(-4)}</span>
                     </div>
                     <div>
-                      <strong>Token:</strong> <span className={styles.addressMono}>{t.tokenAddress.slice(0,6)}...{t.tokenAddress.slice(-4)}</span>
+                      <strong>Shares:</strong> <span className={styles.addressMono}>{t.tokenAddress.slice(0,6)}...{t.tokenAddress.slice(-4)}</span>
                     </div>
                   </div>
                 </div>

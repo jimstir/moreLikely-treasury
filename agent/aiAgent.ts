@@ -1,5 +1,6 @@
 import { ethers } from "ethers";
 import { ComputeClient } from "@0gfoundation/0g-compute-ts-sdk";
+import { initiateDeveloperControlledWalletsClient } from '@circle-fin/developer-controlled-wallets';
 
 export interface TreasuryState {
     assets: string[];
@@ -27,7 +28,8 @@ export interface TradeRecommendation {
 
 export class AIOwnerAgent {
     private provider: ethers.Provider;
-    private agentWallet: ethers.Wallet;
+    private circleClient: ReturnType<typeof initiateDeveloperControlledWalletsClient>;
+    private walletId: string;
     private zeroGComputeApiKey?: string;
     private zeroGComputeBaseUrl?: string;
 
@@ -35,7 +37,9 @@ export class AIOwnerAgent {
 
     constructor(
         rpcUrlOrProvider: string | ethers.Provider,
-        privateKey: string,
+        circleApiKey: string,
+        circleEntitySecret: string,
+        walletId: string,
         zeroGComputeApiKey?: string,
         zeroGComputeBaseUrl?: string,
         model: string = "glm-5.2"
@@ -46,7 +50,13 @@ export class AIOwnerAgent {
         } else {
             this.provider = rpcUrlOrProvider;
         }
-        this.agentWallet = new ethers.Wallet(privateKey, this.provider);
+        
+        this.walletId = walletId;
+        this.circleClient = initiateDeveloperControlledWalletsClient({
+            apiKey: circleApiKey,
+            entitySecret: circleEntitySecret,
+        });
+
         this.zeroGComputeApiKey = zeroGComputeApiKey;
         this.zeroGComputeBaseUrl = zeroGComputeBaseUrl;
     }
@@ -81,7 +91,6 @@ export class AIOwnerAgent {
         marketData: MarketData
     ): Promise<TradeRecommendation> {
         if (!this.zeroGComputeApiKey || !this.zeroGComputeBaseUrl) {
-            // Fallback for testing / when 0G is not configured
             return {
                 recommendTrade: false,
                 tokenIn: "",
@@ -132,7 +141,6 @@ Respond ONLY with a valid JSON object matching this schema:
             }
 
             const content = data.choices[0].message?.content || "";
-            // Parse JSON response
             const match = content.match(/\{[\s\S]*\}/);
             if (match) {
                 return JSON.parse(match[0]) as TradeRecommendation;
@@ -166,15 +174,12 @@ Respond ONLY with a valid JSON object matching this schema:
         }
 
         const tokenIn = recommendation.tokenIn;
-
-        // Verify we hold enough tokenIn
         const balanceInStr = state.balances[tokenIn] || "0";
         const balanceIn = parseFloat(balanceInStr);
         if (balanceIn < amount) {
             return { passed: false, reason: `Insufficient balance: vault holds ${balanceInStr}, requested ${recommendation.amountIn}` };
         }
 
-        // Verify target allocation limits for tokenOut
         const maxAllocPercent = goals.maxTokenAllocationPercent[recommendation.tokenOut] || 100;
         if (maxAllocPercent < 50) {
             return { passed: false, reason: `Proposed trade violates maximum allocation limit of ${maxAllocPercent}% for tokenOut.` };
@@ -183,7 +188,7 @@ Respond ONLY with a valid JSON object matching this schema:
         return { passed: true, reason: "All risk checks passed successfully." };
     }
 
-    // 4. Submit Proposal On-Chain
+    // 4. Submit Proposal On-Chain via Circle API (Fire and Sleep)
     async proposeTrade(
         vaultAddress: string,
         policyAddress: string,
@@ -192,18 +197,47 @@ Respond ONLY with a valid JSON object matching this schema:
         const vaultAbi = [
             "function proposalOpen(uint256 amount, address policy, address receiver, bool select, bool tOrF, address token) external returns (uint256)"
         ];
-        const vault = new ethers.Contract(vaultAddress, vaultAbi, this.agentWallet);
+        
+        const iface = new ethers.Interface(vaultAbi);
         const amountWei = ethers.parseUnits(trade.amountIn, 18);
+        
+        // We will pass the vault address as the receiver since the agent doesn't have a local ethers.Wallet address anymore
+        const receiver = vaultAddress; 
 
-        const tx = await vault.proposalOpen(
+        // 1. Encode the contract call
+        const calldata = iface.encodeFunctionData("proposalOpen", [
             amountWei,
             policyAddress,
-            this.agentWallet.address,
+            receiver,
             true,
             false,
             trade.tokenIn
-        );
-        const receipt = await tx.wait();
-        return receipt.hash;
+        ]);
+
+        console.log("Submitting transaction via Circle Developer-Controlled Wallets API...");
+        
+        // 2. Broadcast via Circle SDK
+        const response = await this.circleClient.createContractExecutionTransaction({
+            walletId: this.walletId,
+            contractAddress: vaultAddress,
+            abiFunctionSignature: "proposalOpen(uint256,address,address,bool,bool,address)",
+            abiParameters: [
+                amountWei.toString(),
+                policyAddress,
+                receiver,
+                "true",
+                "false",
+                trade.tokenIn
+            ],
+            feeLevel: "MEDIUM"
+        });
+
+        const txId = response.data?.id || "unknown";
+        console.log(`Transaction submitted! Circle Tx ID: ${txId}. Going to sleep.`);
+        console.log(`Waiting for Webhook ping at /webhooks/circle to resume execution.`);
+        
+        // 3. Fire and Sleep (return txId immediately without awaiting blockchain confirmation)
+        return txId;
     }
 }
+
