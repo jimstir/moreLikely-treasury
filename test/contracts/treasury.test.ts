@@ -128,6 +128,10 @@ describe("moreLikely Smart Treasury Suite", function () {
         // Check vault holds the USDC assets
         const vaultBalance = await usdc.balanceOf(await treasuryVault.getAddress());
         expect(vaultBalance).to.equal(ethers.parseEther("100"));
+
+        // Explicitly check that Proposal 0 tracked the unallocated deposit
+        const proposalZeroDeposit = await treasuryVault.userDeposit(stakeholderAddress, 0);
+        expect(proposalZeroDeposit).to.equal(ethers.parseEther("100"));
     });
 
     it("should execute an asset swap successfully through the policy and router", async function () {

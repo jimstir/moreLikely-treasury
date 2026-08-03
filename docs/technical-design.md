@@ -267,6 +267,25 @@ Before the `AgentGasEscrow` will forward a transaction to the `TreasuryVault` or
 - **Execution Gas (State Validation):** If the forward request is to execute a trade (`executeSwap` / `proposalApproved`), the escrow MUST query the `TreasuryVault` to verify that `TreasuryVault.vote(proposalId) == true` (the proposal passed) and that it has not already been executed.
 - **Gas Limit Cap:** The escrow SHOULD enforce a maximum gas price or gas limit per transaction to prevent the Master Platform Wallet from maliciously or accidentally draining the escrow via inflated gas fees.
 
+## 8. Treasury Value Tracking Mechanism (TVL)
+
+Because the moreLikely Smart Treasury executes actions via modular policies rather than direct monolithic trades, the treasury's total value is not simply the ERC20 balance of the `TreasuryVault` contract. To properly display metrics on the treasury cards and governor dashboard, the platform tracks both direct and indirect asset values.
+
+### The "Join Treasury" Proposal (Proposal 0)
+The very first conceptual "proposal" for any treasury is the **Join Treasury** proposal, internally tracked as Proposal `0` (`userBook[msg.sender][0]`). 
+- When users deposit the base asset (e.g. USDC) without allocating it to a specific active swap proposal, the liquidity enters this default pool. 
+- The total value of Proposal `0` represents the unallocated, direct base asset liquidity of the treasury. This metric is prominently displayed on the treasury dashboard.
+
+### Indirect Value Tracking (Active Policies)
+When a proposal is approved by shareholders and executed by the AI Agent, the specified assets are transferred *out* of the `TreasuryVault` and *into* an isolated execution contract, such as the `AssetSwapPolicy` or a Lending Policy.
+- **Indirect Ownership:** The treasury no longer owns these tokens directly in the vault. Instead, it owns them indirectly based on the active policy contract temporarily holding them for execution.
+- **Tracking Mechanism:** To calculate the true Total Value Locked (TVL) and display accurate treasury activities, the backend indexer maintains a registry of all approved proposals and their corresponding policy contract addresses. The TVL mechanism aggregates:
+  1. **Direct Value:** The base assets held directly in the `TreasuryVault` (including Proposal 0).
+  2. **Active Swap Value:** The target assets currently held in active `AssetSwapPolicy` contracts awaiting swap execution, or the swapped assets waiting to be refunded back to the vault.
+  3. **Active Yield Value:** Any yield-bearing tokens or collateral held in active lending/staking policy contracts.
+
+This composite TVL is continuously tracked and cached by the backend to ensure the UI displays an accurate, real-time representation of the treasury's net worth across all its active on-chain positions.
+
 ---
 
 ## 7. Frontend UI Requirements

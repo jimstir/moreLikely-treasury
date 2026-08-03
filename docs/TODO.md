@@ -1,5 +1,11 @@
 # TODO
 
+- Private Treasury
+- Agent trading timeframe after approval. So proposal should not be based on the current price of asset swap, as price may change after approval.
+- swap proposals also need to verfiy swapping conditions are met and there is no mev, slippage occuring.
+- Display values, and activities of a treasury, that is public?
+- Exit treasury rules should be defined by the owner at deployment time.
+- 
 
 ## Networks Config
 

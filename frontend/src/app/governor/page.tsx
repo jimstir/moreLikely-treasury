@@ -135,10 +135,18 @@ function GovernorContent() {
       {activeTab === 'manage' && (
         <div style={styles.card}>
           <h2 style={{fontSize: '18px', marginBottom: '16px'}}>Smart Wallet Stats</h2>
-          <div style={{display: 'flex', gap: '20px', marginBottom: '24px'}}>
+          <div style={{display: 'flex', gap: '20px', marginBottom: '24px', flexWrap: 'wrap'}}>
             <div style={styles.statBox}>
               <span style={styles.statLabel}>Gas Budget</span>
               <span style={styles.statValue}>{gasBudget}</span>
+            </div>
+            <div style={styles.statBox}>
+              <span style={styles.statLabel}>Join Treasury (Proposal 0)</span>
+              <span style={styles.statValue}>1,250,000 USDC</span>
+            </div>
+            <div style={styles.statBox}>
+              <span style={styles.statLabel}>Indirect TVL (Active Policies)</span>
+              <span style={styles.statValue}>450,000 USDC</span>
             </div>
             <div style={styles.statBox}>
               <span style={styles.statLabel}>Rate Limit</span>
