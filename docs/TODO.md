@@ -1,10 +1,16 @@
 # TODO
 
 - Private Treasury
+- Single User Treasury
 - Agent trading timeframe after approval. So proposal should not be based on the current price of asset swap, as price may change after approval.
 - swap proposals also need to verfiy swapping conditions are met and there is no mev, slippage occuring.
-- Display values, and activities of a treasury, that is public?
-- Exit treasury rules should be defined by the owner at deployment time.
+- have policies manage their current value And include a `totalAmountOwed` calculation (tracking the principal currently lent out to active Policy contracts). 
+- locate treasury by contract address, UI components must comply with deploy contract, wallet can store contract on platform
+- cost, billing lifecycle
+
+- Voting modue needs to have a shared schema, which could be updated or change based on active voting. This is so the agent/ owner does not need to create a new proposal just becuase concensus wants to change a couple attribute(like asset amount, etc)
+- handle owner can't pay for governor anymore, exit type?
+- Handle proposal deployed contract address reuse after proposal close + same asset activity
 - 
 
 ## Networks Config

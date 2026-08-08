@@ -130,7 +130,8 @@ typechain-types/
 
 # Docs
 docs/*
-!docs/treasury-req.md
 !docs/README.md
-!docs/ai-governor.md
-!docs/lending-req.md
+!docs/ai agent/**
+!docs/security/**
+!docs/smart contracts/**
+!docs/ui/**

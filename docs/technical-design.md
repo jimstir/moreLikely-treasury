@@ -276,6 +276,18 @@ The very first conceptual "proposal" for any treasury is the **Join Treasury** p
 - When users deposit the base asset (e.g. USDC) without allocating it to a specific active swap proposal, the liquidity enters this default pool. 
 - The total value of Proposal `0` represents the unallocated, direct base asset liquidity of the treasury. This metric is prominently displayed on the treasury dashboard.
 
+To exit the treasury and redeem TreasuryToken shares for the base asset (e.g., USDC), the protocol relies on Liquidity Unlock Proposals:
+
+The Proposal: The treasury owner or a quorum of shareholders can submit a formal LiquidityUnlockProposal detailing the total amount of base asset to be made available for redemption.
+Liquidating Assets: Upon approval, the AI Governor (or manual owner) is mandated to gracefully close active positions and pull the required funds back from the Policy contracts to the main TreasuryVault.
+The Redemption Window: Once the target liquidity is secured in the vault, a time-bound "Withdrawal Window" (e.g., 72 hours) opens. During this window, the redeem() and withdraw() functions are temporarily unlocked, allowing shareholders to burn their shares and exit the treasury safely.
+
+#### Proposal Type Enum
+
+The TreasuryVault smart contract supports a few ProposalType Enum value to allow different proposals request besides transactions.
+
+- pType = ADD_TOKEN. Upon achieving quorum in vote()
+
 ### Indirect Value Tracking (Active Policies)
 When a proposal is approved by shareholders and executed by the AI Agent, the specified assets are transferred *out* of the `TreasuryVault` and *into* an isolated execution contract, such as the `AssetSwapPolicy` or a Lending Policy.
 - **Indirect Ownership:** The treasury no longer owns these tokens directly in the vault. Instead, it owns them indirectly based on the active policy contract temporarily holding them for execution.

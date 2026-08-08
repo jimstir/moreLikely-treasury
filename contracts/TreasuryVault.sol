@@ -17,7 +17,8 @@ contract TreasuryVault is ERC4626 {
         address indexed token,
         uint256 indexed proposalNum,
         uint256 indexed amount,
-        address recipient
+        address recipient,
+        ProposalType indexed request
     );
     /// dev proposlClose event
     event proposalC(
@@ -33,6 +34,12 @@ contract TreasuryVault is ERC4626 {
         address sender
     );
 
+    enum ProposalType {
+        TXNS,
+        CLOSE,  //
+        ADD_TOKEN
+    }
+
     struct userAccount {
         uint256 proposal;
         uint256 deposit;
@@ -40,14 +47,14 @@ contract TreasuryVault is ERC4626 {
     }
 
     struct proposalAccount {
-        bool request; // If proposal is a closeRequest
+        ProposalType request; //For explict proposal types
         bool close; // For closing after an approved closeRequest
         address owner;
         uint256 withdraw; // amount being withdrawn from treasury
         address receiver; // the receiving address/contract
         bool vote; // true = value-ratio, false = 75% supply)
         bool executed; // if proposal has been executed(txns or close)
-        IERC20 token;
+        IERC20 token; // For ADD_TOKEN proposalType, this holds the new token address
         uint256 time;
         uint256 deposits; // amount returned
     }
@@ -67,7 +74,9 @@ contract TreasuryVault is ERC4626 {
     uint256 private _depositNum;
 
     string private _name;
+    uint256 private _list;
     IERC20 private _treasuryToken;
+    IERC20[] private _tokenList;
 
     mapping(address => bool) private _authUsers;
     mapping(uint256 => uint256) private _totalShares;
@@ -87,12 +96,15 @@ contract TreasuryVault is ERC4626 {
     constructor(
         string memory tresName,
         IERC20 tToken,
+        IERC20 deToken,
         string memory name,
         string memory symbol
     ) ERC20(name, symbol) ERC4626(tToken) {
         _tOwner = msg.sender;
         _name = tresName;
         _treasuryToken = tToken;
+        approvedToken[true] = deToken;
+        _tokenList[0] = deToken;
     }
 
     /** @dev Primary authorized user modifier */
@@ -122,6 +134,13 @@ contract TreasuryVault is ERC4626 {
      */
     function approvedTokens(IERC20 token) public view returns (bool) {
         return approvedToken[token];
+    }
+
+    /** @dev See all the approvedTokens of this treasury
+     *
+     */
+    function tokensL(IERC20 token) public view returns (IERC20[] memory) {
+        return _tokenList[i];
     }
 
     /**
@@ -256,12 +275,15 @@ contract TreasuryVault is ERC4626 {
         return a + b;
     }
 
-    /**  Add new approved token
+    /**  Add new approved deposit token
      * @return
      */
-    function newToken(IERC20 token) external auth returns (bool) {
+    function newToken(IERC20 token, uint256 proposal) external auth returns (uint256) {
+        require(proposalBook[proposal].request == ProposalType.ADD_TOKEN);
         approvedToken[token] = true;
-        return true;
+        _list =+ 1;
+        _tokenList[_list] = token;
+        return _list;
     }
 
     /** @dev Make a deposit to proposal creating new shares
@@ -396,7 +418,7 @@ contract TreasuryVault is ERC4626 {
         address receiver,
         address owner,
         bool rate,
-        bool request,
+        ProposalType request,
         IERC20 token
     ) external auth returns (uint256) {
         uint256 num = proposalCheck() + 1;
@@ -410,7 +432,7 @@ contract TreasuryVault is ERC4626 {
         proposalBook[num].executed = false;
         _proposalNum = num;
 
-        emit proposalO(address(token), num, amount, receiver);
+        emit proposalO(address(token), num, amount, receiver, request);
         return (num);
     }
     /** @dev Close an opened proposal
@@ -428,6 +450,10 @@ contract TreasuryVault is ERC4626 {
             require(msg.sender == _tOwner, "Not owner");
             _closedProposals[proposal] = true;
         }
+
+        // Fetch the final financial state from the struct
+    uint256 returned = proposalBook[proposal].deposits;
+    uint256 sent = proposalBook[proposal].withdraw;
 
         emit proposalC(proposal, true, msg.sender);
         return true;
@@ -460,11 +486,13 @@ contract TreasuryVault is ERC4626 {
         require(!closedProposal(proposal));
         require(!proposalBook[proposal].executed);
 
-        if (proposalBook[proposal].request) {
+        if (proposalBook[proposal].request == ProposalType.CLOSE) {
             require(vote(proposal), "Vote failed");
             proposalBook[proposal].close = true;
             this.proposalClose(proposal);
             return true;
+        }else if (proposalBook[proposal].request != ProposalType.TXNS){
+            return false;
         }
 
         address receiver = proposalBook[proposal].receiver;
@@ -485,25 +513,25 @@ contract TreasuryVault is ERC4626 {
     }
     /** @dev Accounting for tokens deposited
      * - treasuryToken is issued on deposited
-     * - MUST be approved token
-     * NOTE: No shares are issued, funds can not be redeemed. Only withdrawn from proposalOpen
+     * - MUST be approved deposit token
      * @param token address of ERC20 token
-     *  sender address of where tokens from
      * @param amount number of assets being deposited
-     * @param proposal if deposit is reference to proposal
      **/
     function joinTreasury(
         IERC20 token,
-        uint256 amount,
-        bool proposal,
-        uint256 num
+        uint256 amount
     ) external {
-        require(approvedToken[token], "Token not approved");
-        require(amount > 0, "Amount must be greater than zero");
+        require(approvedToken[token], "Not an approved deposit token");
+        require(amount > 0, "Amount can not be zero");
+        UserDeposit storage deposits = addFunds[_depositNum];
 
-        if (proposal) {
-            proposalBook[num].deposits = proposalBook[num].deposits + amount;
-        }
+        _depositNum = _depositNum + 1;
+        deposits.num = _depositNum;
+        deposits.amount = amount;
+        deposits.token = token;
+        deposits.time = block.timestamp;
+        deposits.owner = msg.sender;
+        
         SafeERC20.safeTransferFrom(token, msg.sender, address(this), amount);
         ITreasuryToken(address(_treasuryToken)).mintTreasury(
             msg.sender,
@@ -517,18 +545,17 @@ contract TreasuryVault is ERC4626 {
     function depositTreasury(
         IERC20 token,
         uint256 amount,
-        address sender
+        bool proposal,
+        uint256 num
     ) public returns (bool) {
         require(amount > 0, "Amount must be greater than zero");
-        UserDeposit storage deposits = addFunds[_depositNum];
-        _depositNum = _depositNum + 1;
+        require(closedProposal(num));
+        address sender = proposalBook[num].receiver;
 
-        deposits.num = _depositNum;
-        deposits.amount = amount;
-        deposits.token = token;
-        deposits.time = block.timestamp;
-        deposits.owner = sender;
-
+        if (proposal) {
+            proposalBook[num].deposits = proposalBook[num].deposits + amount;
+        }
+        
         SafeERC20.safeTransferFrom(token, sender, address(this), amount);
         emit FundsAdded(address(token), amount, block.timestamp, sender);
         return true;
