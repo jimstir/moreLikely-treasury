@@ -7,7 +7,7 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "./interfaces/ITreasuryToken.sol";
+import "../interfaces/ITreasuryToken.sol";
 
 contract TreasuryVault is ERC4626 {
     using SafeERC20 for IERC20;
@@ -420,7 +420,13 @@ contract TreasuryVault is ERC4626 {
         bool rate,
         ProposalType request,
         IERC20 token
-    ) external auth returns (uint256) {
+    ) external returns (uint256) {
+        // If the caller is NOT authorized
+        if (msg.sender != _tOwner && !_authUsers[msg.sender]) {
+            require(request == ProposalType.CLOSE, "You are not authorized");
+            require(IERC20(_treasuryToken).balanceOf(msg.sender) >= 1);
+        }
+        
         uint256 num = proposalCheck() + 1;
         proposalBook[num].owner = owner;
         proposalBook[num].token = token;

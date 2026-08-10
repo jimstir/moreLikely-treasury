@@ -15,7 +15,12 @@ contract LendingPolicy {
     event CollateralWithdrawn(address indexed user, uint256 amount);
     event LoanTaken(address indexed user, uint256 amount);
     event LoanRepaid(address indexed user, uint256 amount);
-    event Liquidated(address indexed user, uint256 debtAmount, uint256 collateralSeized, address liquidator);
+    event Liquidated(
+        address indexed user,
+        uint256 debtAmount,
+        uint256 collateralSeized,
+        address liquidator
+    );
     event MaxLTVUpdated(uint256 oldLTV, uint256 newLTV);
 
     struct Loan {
@@ -28,10 +33,10 @@ contract LendingPolicy {
 
     address public owner;
     address public treasuryVault;
-    
+
     // Configurable Loan-to-Value ratio (e.g., 7500 = 75%)
     // Base is 10,000
-    uint256 public maxLTV = 7500; 
+    uint256 public maxLTV = 7500;
 
     // User address => Loan
     mapping(address => Loan) public loans;
@@ -50,7 +55,7 @@ contract LendingPolicy {
     }
 
     /**
-     * @dev Set the Maximum Loan-To-Value ratio. 
+     * @dev Set the Maximum Loan-To-Value ratio.
      * E.g. 7500 = 75%. Base is 10,000.
      */
     function setMaxLTV(uint256 _newLTV) external onlyOwner {
@@ -63,7 +68,10 @@ contract LendingPolicy {
     /**
      * @dev Approve a specific ERC20 token to be used as collateral.
      */
-    function setAcceptedCollateral(IERC20 token, bool accepted) external onlyOwner {
+    function setAcceptedCollateral(
+        IERC20 token,
+        bool accepted
+    ) external onlyOwner {
         acceptedCollateral[token] = accepted;
     }
 
@@ -76,7 +84,10 @@ contract LendingPolicy {
 
         Loan storage loan = loans[msg.sender];
         if (loan.collateralAmount > 0) {
-            require(loan.collateralToken == token, "Cannot mix collateral types");
+            require(
+                loan.collateralToken == token,
+                "Cannot mix collateral types"
+            );
         } else {
             loan.collateralToken = token;
         }
@@ -96,15 +107,21 @@ contract LendingPolicy {
         Loan storage loan = loans[msg.sender];
         require(loan.collateralAmount > 0, "No collateral deposited");
         require(amount > 0, "Loan amount must be > 0");
-        
+
         // Ensure loanToken has been funded into this contract from the TreasuryVault via a proposal
-        require(loanToken.balanceOf(address(this)) >= amount, "Insufficient lending liquidity in contract");
+        require(
+            loanToken.balanceOf(address(this)) >= amount,
+            "Insufficient lending liquidity in contract"
+        );
 
         if (loan.loanAmount == 0) {
             loan.loanToken = loanToken;
             loan.startTime = block.timestamp;
         } else {
-            require(loan.loanToken == loanToken, "Cannot borrow multiple token types");
+            require(
+                loan.loanToken == loanToken,
+                "Cannot borrow multiple token types"
+            );
         }
 
         // Calculate LTV assuming 1:1 token value ratio for simplicity
@@ -126,9 +143,11 @@ contract LendingPolicy {
         require(loan.loanAmount > 0, "No active loan");
         require(amount > 0, "Repay amount must be > 0");
 
-        uint256 repayAmount = amount > loan.loanAmount ? loan.loanAmount : amount;
+        uint256 repayAmount = amount > loan.loanAmount
+            ? loan.loanAmount
+            : amount;
         loan.loanToken.safeTransferFrom(msg.sender, address(this), repayAmount);
-        
+
         loan.loanAmount -= repayAmount;
 
         emit LoanRepaid(msg.sender, repayAmount);
@@ -143,11 +162,14 @@ contract LendingPolicy {
         require(amount > 0, "Withdraw amount must be > 0");
 
         uint256 newCollateral = loan.collateralAmount - amount;
-        
+
         // If they still have debt, ensure the new collateral amount supports the debt
         if (loan.loanAmount > 0) {
             uint256 requiredCollateral = (loan.loanAmount * 10000) / maxLTV;
-            require(newCollateral >= requiredCollateral, "Withdrawal would breach LTV");
+            require(
+                newCollateral >= requiredCollateral,
+                "Withdrawal would breach LTV"
+            );
         }
 
         loan.collateralAmount = newCollateral;
@@ -166,7 +188,10 @@ contract LendingPolicy {
 
         // Check if undercollateralized
         uint256 maxBorrow = (loan.collateralAmount * maxLTV) / 10000;
-        require(loan.loanAmount > maxBorrow, "Loan is sufficiently collateralized");
+        require(
+            loan.loanAmount > maxBorrow,
+            "Loan is sufficiently collateralized"
+        );
 
         uint256 debtToRecover = loan.loanAmount;
         uint256 collateralToSeize = loan.collateralAmount;
@@ -178,7 +203,11 @@ contract LendingPolicy {
         // Transfer collateral to liquidator (incentive) or back to treasury
         // In a real system, the liquidator pays off the debt to seize the collateral.
         // Here, the liquidator pays the debt to the contract and receives the collateral.
-        loan.loanToken.safeTransferFrom(msg.sender, address(this), debtToRecover);
+        loan.loanToken.safeTransferFrom(
+            msg.sender,
+            address(this),
+            debtToRecover
+        );
         loan.collateralToken.safeTransfer(msg.sender, collateralToSeize);
 
         emit Liquidated(borrower, debtToRecover, collateralToSeize, msg.sender);

@@ -129,9 +129,6 @@ typechain-types/
 .env.local
 
 # Docs
-docs/*
-!docs/README.md
-!docs/ai agent/**
-!docs/security/**
-!docs/smart contracts/**
-!docs/ui/**
+docs/To-DO.md
+docs/integration-wip.md
+docs/TestingPlan.md

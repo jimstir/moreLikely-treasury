@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "./interfaces/ITreasuryToken.sol";
+import "../interfaces/ITreasuryToken.sol";
 
 contract TreasuryToken is ERC20, Ownable, ITreasuryToken {
     address public vault;
