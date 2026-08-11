@@ -4,8 +4,9 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "../interfaces/ITreasuryPolicy.sol";
 
-contract AssetSwapPolicy is Ownable {
+contract AssetSwapPolicy is Ownable, ITreasuryPolicy {
     using SafeERC20 for IERC20;
 
     event SwapExecuted(
@@ -19,6 +20,7 @@ contract AssetSwapPolicy is Ownable {
     event DisputeResolved(uint256 indexed proposalId);
 
     address public treasuryVault;
+    uint256 public proposalNum;
     address public universalRouter;
     address public attestationSigner;
     uint256 public disputePeriod = 1 days;
@@ -135,5 +137,12 @@ contract AssetSwapPolicy is Ownable {
             s := mload(add(sig, 64))
             v := byte(0, mload(add(sig, 96)))
         }
+    }
+    function getTotalValue() external view returns (uint256) {
+        return 0;
+    }
+
+    function liquidate() external onlyOwner {
+        // Return underlying funds to treasury if applicable
     }
 }

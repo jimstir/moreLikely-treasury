@@ -7,8 +7,9 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "../interfaces/ITreasuryVault.sol";
+import "../interfaces/ITreasuryPolicy.sol";
 
-contract LendingPolicy {
+contract LendingPolicy is ITreasuryPolicy {
     using SafeERC20 for IERC20;
 
     event CollateralDeposited(address indexed user, uint256 amount);
@@ -33,6 +34,7 @@ contract LendingPolicy {
 
     address public owner;
     address public treasuryVault;
+    uint256 public proposalNum;
 
     // Configurable Loan-to-Value ratio (e.g., 7500 = 75%)
     // Base is 10,000
@@ -211,5 +213,12 @@ contract LendingPolicy {
         loan.collateralToken.safeTransfer(msg.sender, collateralToSeize);
 
         emit Liquidated(borrower, debtToRecover, collateralToSeize, msg.sender);
+    }
+    function getTotalValue() external view returns (uint256) {
+        return 0;
+    }
+
+    function liquidate() external onlyOwner {
+        // Return underlying funds to treasury if applicable
     }
 }

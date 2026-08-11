@@ -264,8 +264,12 @@ The agent cannot bypass these on-chain checks. The tools are the agent's interfa
 
 #### Trust Profile
 
-- The Treasury Owner has the administrative rights to close policies and recall funds early to protect the treasury in volatile markets.
-- The owner could use ADD_Token, check for Can the the owner can pass an ADD_TOKEN proposal by themselves?
+The UI MUST compile a Trust Profile of the treasury and display it transparently to stakeholders before they interact with the platform. This profile is evaluated using the following criteria:
+
+*   **Owner Governance Override:** The Treasury Owner has the administrative rights to unilaterally close policies and recall funds early to protect the treasury in volatile markets (via `proposalClose()`).
+*   **Token Add Control:** The owner could use `ADD_TOKEN` proposals. The UI must evaluate if the owner holds enough voting power to pass an `ADD_TOKEN` proposal by themselves, which would allow them to change the math of the treasury unilaterally.
+*   **Consensus Quorum Level:** The UI must display the immutable `votingThres` variable (basis points converted to percentage, e.g., 75%). This informs users of the supermajority requirement needed to pass major treasury restructuring proposals or close strategies. A lower threshold indicates higher centralization risk, whereas a higher threshold indicates democratic security but higher risk of governance gridlock.
+
 
 ---
 
@@ -332,5 +336,47 @@ The AI agent logic is implemented as a backend module (not API endpoints). The m
   - Interacts directly with the Uniswap Router/APIs to manage buying and selling assets.
   - Receives approved funds from the vault and executes atomic swap routes.
   - **Production vs. Testnet Targets:** While automated unit tests and local fork simulations utilize the Ethereum Sepolia testnet environment and WETH/USDC addresses, the production deployment of the application and policy contract MUST target the **Uniswap Ethereum Mainnet** implementation (using mainnet token addresses and the mainnet Universal Router).
+
+## Audit Getters
+
+This section details how the front-end UI components consume the `TreasuryVault`'s public state variables and view functions to present transparent, real-time audit data to shareholders and auditors.
+
+### 1. `AuditBeforeJoin` (UI Component)
+Before a user deposits funds into the treasury (calling `joinTreasury`), this widget performs pre-flight audit checks to calculate a **Trust Profile Score** and displays warnings about centralization risks.
+
+*   **`whosOwner()`** (Public Variable Getter)
+    *   **UI Display:** Renders the "Treasury Administrator Address". The UI also queries the `TreasuryToken` contract to verify that `whosOwner` is **not** the owner of the token minting rights, showing a critical security warning if the owner has direct minting access.
+*   **`votingThres()`** (Public Variable Getter)
+    *   **UI Display:** Converts the basis points (e.g., `7500`) into a percentage and displays: `"Governance Consensus Quorum: 75% Supermajority Required"`.
+*   **`getAuth(address)`** (Public Mapping Getter)
+    *   **UI Display:** Renders the list of all authorized execution wallets (e.g., the AI Agent's wallet). Warns the user if there are more than 2 non-owner wallets with execution rights.
+*   **`approvedTokens(IERC20)`** (Public Mapping Getter)
+    *   **UI Display:** When a user selects a token to deposit, the UI verifies compliance. If `approvedTokens` returns `false`, it disables the deposit button and shows: `"Deposit Rejected: This token is not whitelisted by the DAO."`
+
+### 2. `AuditInteractionsWidget` (UI Component)
+This widget displays active and historical proposals, allowing users to track the lifecycle of DAO consensus.
+
+*   **`proposalCheck()`** (Public Variable Getter)
+    *   **UI Display:** Serves as the length parameter. The UI loops from `1` to `proposalCheck` to fetch and render the list of all historical proposals.
+*   **`totalShares(uint256)`** (Public Mapping Getter)
+    *   **UI Display:** Renders the voting progress bar: `"Current Staked Votes: 45,000 / 75,000 required for Quorum"`.
+*   **`vote(uint256)`** (View Function)
+    *   **UI Display:** Renders the live approval badge for a proposal: `"Status: Approved (Quorum Met)"` or `"Status: Voting (Quorum Pending)"`.
+*   **`closedProposal(uint256)`** (Public Mapping Getter)
+    *   **UI Display:** Renders the status of voting lockups. If `true`, the UI displays a green button: `"Voting Closed: Unlock & Withdraw Your Shares"`.
+
+### 3. `PolicyTracker` / `Active Strategies Dashboard`
+This component tracks the performance of deployed funds in the active DeFi strategies.
+
+*   **`executed(uint256)`** (Public Mapping Getter)
+    *   **UI Display:** Displays whether the approved funds have physically left the vault: `"Strategy Status: Deployed (Funds transferred to Aave Policy)"`.
+*   **`owed(uint256)`** (View Function)
+    *   **UI Display:** Dynamically calculates the capital currently at risk. It reads `proposalBook[num].withdraw` (Principal sent) and subtracts `proposalBook[num].deposits` (Yield returned). Renders a ledger:
+        *   *Principal Transferred:* \$100,000 USDC
+        *   *Yield / Funds Returned:* \$60,000 USDC
+        *   *Net Outstanding Capital at Risk:* \$40,000 USDC (Highlighted in Orange)
+*   **`checkCompliance(address)`** (View Function)
+    *   **UI Display:** Integrated into the **Create Proposal Form**. When an authorized manager pastes a proposed contract address, the UI queries this function in the background. It renders a green `"✅ Verified Compliant Policy"` or a red `"❌ Non-Compliant Contract (Warning: Proposal will fail)"` directly next to the input field.
+
 
 

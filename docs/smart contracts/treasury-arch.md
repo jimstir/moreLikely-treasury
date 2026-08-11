@@ -70,6 +70,9 @@ State Storage: The parameters (target receiver, token type, requested amount, an
 Event Emission: A `proposalO` (Proposal Opened) event is emitted to the blockchain. A trigger for the frontend UI and indexers to alert shareholders that a new vote is active.
 Lock: The requested tokens remain safely inside the TreasuryVault until the shareholder consensus threshold is met and `proposalApproved()` is successfully called.
 
+It is RECOMMENDED that the defined `receiver` of the `proposalOpen` should pass a `checkCompliance(address policyAddress)`.
+The complaint policy interface is defined in the [Policy](#policy) section.
+
 #### Close Proposal
 
 The `proposalClose()` function marks the definitive end of a proposal's lifecycle. The `owner` or authorized address should create proposals with a defined close process. The standard recommended proces is to close proposals only after a failed voting period (votes on the treasury do not have a time limit), or after the token that were sent were returned(this may include with profit/loss).
@@ -78,8 +81,40 @@ If shareholders wish to exit an open proposal, but the owner/auth has not a clos
 
 #### Add Token
 
+-`ProposalType.ADD_TOKEN`: 
 
 ### Voting
+
+Voting consensus mechanism is where shareholders vote lock their `treasuryToken` directly into a proposal. This creates an on-chain verification layer before any funds can be moved.
+
+- To vote on a proposal, a shareholder must lock their `treasuryToken` using `proposalDeposit()` or `proposalMint()`.
+- By locking tokens, shareholders physically back the proposal with their own capital.
+- Staked voting tokens cannot be retrieved until the proposal is officially closed the `proposalClose()`. Shareholders can then retrieve their stake tokens via `proposalWithdraw()` or `proposalRedeem()`, to discourage double-voting attacks in the treasury.
+
+#### Checking a Vote
+
+- When `vote(proposalNum)` is called, the `treasuryVault` determines if the proposal has passed based on the vote boolean defined in the proposal book
+
+Value-Ratio Voting (rate == true):
+
+- Logic: The total voting shares locked in the proposal must be greater than or equal to the requested withdraw amount: totalShares(proposal) >= withdrawAmount.
+- Use Case: Typically used for asset trades (TXNS). A manager cannot deploy $100,000 USDC into a policy unless shareholders lock at least $100,000 of their own DAO tokens to back the risk.
+
+#### Off-Chain Gasless Voting (EIP-712)(Optional)
+
+
+#### Governance Security, Reasoning Token Locking
+
+Unlike traditional DAOs that use checkpointed voting (which allows voters to support infinite concurrent proposals without locking tokens), the Open Treasury utilizes a Capital-Locked Voting Model. This is a deliberate game-theoretic design choice implemented to protect minority shareholders:
+
+Rate-Limiting Whales: Because tokens must be physically locked to vote, voting power is a scarce resource. Large token holders (whales) cannot collude with the owner to push through multiple malicious proposals simultaneously, as they are forced to divide their voting weight across active proposals.
+Preventing Voter Fatigue: By making voting resource-heavy, the protocol discourages "proposal spamming." Shareholders are incentivized to deeply analyze and prioritize only the most critical proposals.
+Economic Alignment (Skin in the Game): Locking capital directly ties the voter's financial outcome to the proposal's success. Voters cannot vote "Yes" on a risky proposal and immediately dump their tokens on the open market before the proposal executes.
+
+(note: Future work could intorduce different voting options.)
+
+### Policy
+-
 
 
 ### Exiting Proposals
@@ -91,3 +126,43 @@ Because different treasuries require different exit mechanics (e.g., continuous 
 Deployment: An Exit Policy is typically deployed alongside the TreasuryVault to provide transparent, pre-defined exit rules for early joiners.
 Execution: When an EXIT proposal is passed, the Vault routes the approved funds to the designated Exit Policy contract.
 Redemption: The Exit Policy handles the complex logic of accepting a user's TreasuryToken, burning it to remove their voting power, and dispensing their pro-rata share of the underlying asset.
+
+## Auditing a Treasury
+
+An Open Treasury is designed to be fully transparent and auditable by any party (shareholders, indexers, or AI agents) directly from the blockchain. This transparency acts as a trust framework, allowing users to verify the treasury's state and detect malicious actions without relying on a centralized front-end interface.
+
+### Audit Getters
+
+The following view functions are implemented in `TreasuryVault.sol` to expose the contract's state for public auditing.
+
+#### 1. Administration & Access Control
+*   `whosOwner() public view returns (address)`
+    *   **Auditing Purpose:** Identifies the deployer/owner of the treasury. Users can verify that this address does not hold minting rights on the `TreasuryToken` itself to prevent unilateral share manipulation.
+*   `getAuth(address user) public view returns (bool)`
+    *   **Auditing Purpose:** Exposes whether a given address has secondary administrative privileges. Auditors can use this to verify the specific addresses of relayers, AI agents, or escrows that have proposal execution access.
+
+#### 2. Whitelists & Assets
+*   `approvedTokens(IERC20 token) public view returns (bool)`
+    *   **Auditing Purpose:** Verifies if a token is whitelisted for deposits. Essential for ensuring the owner has not unilaterally whitelisted a malicious/illiquid token to manipulate the treasury's asset base.
+*   `tokensL() public view returns (IERC20[] memory)`
+    *   **Auditing Purpose:** Returns the full array of all whitelisted deposit tokens, allowing indexers to easily track every active asset class in the treasury.
+
+#### 3. Proposal Tracking
+*   `proposalCheck() public view returns (uint256)`
+    *   **Auditing Purpose:** Returns the total count of all opened proposals. This serves as the index length for auditing the proposal database.
+*   `closedProposal(uint256 proposal) public view returns (bool)`
+    *   **Auditing Purpose:** Confirms if a specific proposal is finalized. A closed proposal indicates that its active lifecycle has ended and shareholders can safely withdraw/redeem their locked voting shares.
+*   `executed(uint256 proposal) public view returns (bool)`
+    *   **Auditing Purpose:** Verifies if the approved tokens for a `TXNS` proposal have been transferred out to the target policy contract.
+
+#### 4. Financial & Risk Auditing
+*   `owed(uint256 num) public view returns (uint256)`
+    *   **Auditing Purpose:** The primary risk tracking function. It calculates the deficit of an active proposal (`withdraw - deposits`). If the value is `0` or negative, the policy has returned all principal (with potential profits). If positive, this is the exact amount of treasury capital currently at risk in that policy.
+*   `totalShares(uint256 proposal) public view returns (uint256)`
+    *   **Auditing Purpose:** Exposes the exact amount of voting shares locked in a proposal. This allows public calculation of shareholder voter turnout.
+
+#### 5. Logic & Compliance Verification
+*   `vote(uint256 proposal) public view returns (bool)`
+    *   **Auditing Purpose:** Publicly calculates if a proposal has met its required consensus threshold (either Value-Ratio or Supermajority) to ensure execution rules are mathematically enforced.
+*   `checkCompliance(address policyAddress) public view returns (bool)`
+    *   **Auditing Purpose:** Queries the ERC-165 compliance of any smart contract. Shareholders can check this view function to ensure a target address is a Compliant Policy *before* voting to send funds to it.
