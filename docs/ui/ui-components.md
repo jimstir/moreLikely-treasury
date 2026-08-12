@@ -339,36 +339,54 @@ The AI agent logic is implemented as a backend module (not API endpoints). The m
 
 ## Audit Getters
 
-This section details how the front-end UI components consume the `TreasuryVault`'s public state variables and view functions to present transparent, real-time audit data to shareholders and auditors.
+This section details how the front-end UI components consume the `TreasuryVault`'s public state variables and mappings to present transparent, real-time audit data to shareholders and auditors.
 
 ### 1. `AuditBeforeJoin` (UI Component)
 Before a user deposits funds into the treasury (calling `joinTreasury`), this widget performs pre-flight audit checks to calculate a **Trust Profile Score** and displays warnings about centralization risks.
 
-*   **`whosOwner()`** (Public Variable Getter)
+*   **`whosOwner()`** (Public `address` variable)
     *   **UI Display:** Renders the "Treasury Administrator Address". The UI also queries the `TreasuryToken` contract to verify that `whosOwner` is **not** the owner of the token minting rights, showing a critical security warning if the owner has direct minting access.
-*   **`votingThres()`** (Public Variable Getter)
+*   **`votingThres()`** (Public `uint256` variable)
     *   **UI Display:** Converts the basis points (e.g., `7500`) into a percentage and displays: `"Governance Consensus Quorum: 75% Supermajority Required"`.
-*   **`getAuth(address)`** (Public Mapping Getter)
+*   **`getAuth(address)`** (Public `mapping` getter)
     *   **UI Display:** Renders the list of all authorized execution wallets (e.g., the AI Agent's wallet). Warns the user if there are more than 2 non-owner wallets with execution rights.
-*   **`approvedTokens(IERC20)`** (Public Mapping Getter)
+*   **`approvedTokens(IERC20)`** (Public `mapping` getter)
     *   **UI Display:** When a user selects a token to deposit, the UI verifies compliance. If `approvedTokens` returns `false`, it disables the deposit button and shows: `"Deposit Rejected: This token is not whitelisted by the DAO."`
 
 ### 2. `AuditInteractionsWidget` (UI Component)
 This widget displays active and historical proposals, allowing users to track the lifecycle of DAO consensus.
 
-*   **`proposalCheck()`** (Public Variable Getter)
+*   **`proposalCheck()`** (Public `uint256` variable)
     *   **UI Display:** Serves as the length parameter. The UI loops from `1` to `proposalCheck` to fetch and render the list of all historical proposals.
-*   **`totalShares(uint256)`** (Public Mapping Getter)
+*   **`proposalBook(uint256)`** (Public `mapping` getter returning a struct tuple)
+    *   **UI Parsing & Index Mapping:** Querying `proposalBook(proposalId)` returns a tuple of the `proposalAccount` struct. The UI must map the returned array indices as follows:
+        *   **Index 0: `request` (uint8)** - The Proposal Type:
+            *   `0` (`TXNS`): Display: `"Transactional proposal"`
+            *   `1` (`CLOSE`): Display: `"Proposal Closure request"`
+            *   `2` (`ADD_TOKEN`): Display: `"Token Whitelist request"`
+        *   **Index 1: `close` (bool)** - Authorize Close flag. If `true`, indicates the proposal is ready to bypass owner controls and be closed permissionlessly.
+        *   **Index 2: `owner` (address)** - The address of the proposal's creator. Render as: `"Proposed by: [owner]"`.
+        *   **Index 3: `withdraw` (uint256)** - Asset amount or target ID:
+            *   *For `CLOSE` request (Index 0 is `1`):* Denotes the **target proposal ID** to close. Render as: `"Target Proposal: #[withdraw]"`.
+            *   *For `TXNS` request (Index 0 is `0`):* Denotes the amount of assets being withdrawn. Render as decimal formatted based on the token's decimals.
+        *   **Index 4: `receiver` (address)** - The recipient address of the funds (for `TXNS` proposals) or target policy contract.
+        *   **Index 5: `executed` (bool)** - Execution status:
+            *   `true`: Display badge `"Status: Executed"`
+            *   `false`: Display badge `"Status: Pending Execution / Active"`
+        *   **Index 6: `token` (address)** - The token address used in the proposal (e.g. USDC, WETH).
+        *   **Index 7: `time` (uint256)** - Unix timestamp of when the proposal was opened. Convert to local date-time format for display.
+        *   **Index 8: `deposits` (uint256)** - The total amount of funds returned to the vault for this proposal. Used in risk/P&L calculations.
+*   **`totalShares(uint256)`** (Public `mapping` getter)
     *   **UI Display:** Renders the voting progress bar: `"Current Staked Votes: 45,000 / 75,000 required for Quorum"`.
 *   **`vote(uint256)`** (View Function)
     *   **UI Display:** Renders the live approval badge for a proposal: `"Status: Approved (Quorum Met)"` or `"Status: Voting (Quorum Pending)"`.
-*   **`closedProposal(uint256)`** (Public Mapping Getter)
+*   **`closedProposal(uint256)`** (Public `mapping` getter)
     *   **UI Display:** Renders the status of voting lockups. If `true`, the UI displays a green button: `"Voting Closed: Unlock & Withdraw Your Shares"`.
 
 ### 3. `PolicyTracker` / `Active Strategies Dashboard`
 This component tracks the performance of deployed funds in the active DeFi strategies.
 
-*   **`executed(uint256)`** (Public Mapping Getter)
+*   **`executed(uint256)`** (Public `mapping` getter)
     *   **UI Display:** Displays whether the approved funds have physically left the vault: `"Strategy Status: Deployed (Funds transferred to Aave Policy)"`.
 *   **`owed(uint256)`** (View Function)
     *   **UI Display:** Dynamically calculates the capital currently at risk. It reads `proposalBook[num].withdraw` (Principal sent) and subtracts `proposalBook[num].deposits` (Yield returned). Renders a ledger:
@@ -378,5 +396,13 @@ This component tracks the performance of deployed funds in the active DeFi strat
 *   **`checkCompliance(address)`** (View Function)
     *   **UI Display:** Integrated into the **Create Proposal Form**. When an authorized manager pastes a proposed contract address, the UI queries this function in the background. It renders a green `"✅ Verified Compliant Policy"` or a red `"❌ Non-Compliant Contract (Warning: Proposal will fail)"` directly next to the input field.
 
+### 4. `VoterRecordWidget` (UI Component)
+This widget displays the individual user's voting record and allows them to claim exit tokens.
 
-
+*   **`userBook(address, uint256)`** (Public `mapping` getter returning a struct tuple)
+    *   **UI Parsing & Index Mapping:** Querying `userBook(userAddress, index)` returns a tuple representing the `userAccount` struct. The UI must map indices as follows:
+        *   **Index 0: `proposal` (uint256)** - Metadata or Proposal ID:
+            *   *For Index 0 query:* Represents the **total count** of proposals the user has joined.
+            *   *For Index > 0 query:* Represents the specific proposal number the user voted in.
+        *   **Index 1: `deposit` (uint256)** - The amount of voting shares the user minted and locked for this proposal. Render as: `"Voted Shares: [deposit] shares"`.
+        *   **Index 2: `withdrew` (uint256)** - The amount of voting shares the user has successfully burned to unlock their tokens. If `withdrew == deposit`, render status as `"Withdrawn"`; otherwise, display a `"Claim Shares"` button.

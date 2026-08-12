@@ -11,8 +11,8 @@ This document describes the architecture for the `TreasuryVault.sol`, `TreasuryT
 - **Voting:** 
 - **Executing Approvals:** If approved, execute any onchain transaction required. 
 - **Joining a Treasury:**
-- **Exiting a Treasury:**
--**Policy:**
+- **Exiting a Treasury:** 
+-**Policy:** A compliant policy contract
 - **Treasury Audit:** Display values, and activities of a treasury, that is public access through on-chain view functions, hash recreation, treasury-mandate, etc.
 
 
@@ -60,6 +60,7 @@ The primary `ProposalType` include:
 `TXNs`: A request to withdraw a specific amount of the base asset to a verified Policy Contract (e.g., executing a Uniswap trade or depositing into Aave).
 `CLOSE`: An emergency or strategic request to recall liquidity from an active Policy Contract back into the idle TreasuryVault pool.
 `ADD_TOKEN`: A governance-level request to add a new stablecoin or fiat-equivalent to the whitelist of accepted deposit tokens. (Note: This protects shareholders by ensuring the mathematical base of the treasury cannot change without consensus).
+`EXIT_TOKEN`
 
 #### Open Proposal
 
@@ -100,8 +101,27 @@ Value-Ratio Voting (rate == true):
 - Logic: The total voting shares locked in the proposal must be greater than or equal to the requested withdraw amount: totalShares(proposal) >= withdrawAmount.
 - Use Case: Typically used for asset trades (TXNS). A manager cannot deploy $100,000 USDC into a policy unless shareholders lock at least $100,000 of their own DAO tokens to back the risk.
 
-#### Off-Chain Gasless Voting (EIP-712)(Optional)
+#### Off-Chain Voting & Voter Pool (Optional)
 
+To maximize voter participation and eliminate gas costs for shareholders, the protocol implements a gasless off-chain voting system aggregated through an optional (`VoterPool.sol`). This design replaces standard relayers with a Layer-2 style Merkle rollup model to solve block gas limits and front-running vulnerabilities.
+
+1. The Deposit Phase
+
+Shareholders who want to vote gaslessly deposit their `TreasuryToken` into the `VoterPool` contract. The pool tracks their deposits internally(may revert if address not a member?***). By locking tokens inside the pool first, voters cannot transfer their tokens away to front-run and crash the relayer's transaction (resolving the Gas Exhaustion/Griefing exploit).
+
+2. The Off-Chain Signature & Aggregation Phase
+
+*   **Free Signatures:** Shareholders sign their vote allocations for a specific proposal off-chain using EIP-712 signatures.
+-   **Merkle Tree Generation:** The platform operator (or AI Governor) collects these signed votes off-chain and constructs a Merkle Tree where each leaf represents a user's vote: `(voter_address, amount, proposalId)`.
+-  **Constant Gas Execution:** The operator submits a single transaction containing the Merkle Root and the Total Sum of all votes to the `VoterPool` contract. The `VoterPool` verifies the signatures and executes one depsoit of the total sum into the `TreasuryVault` on behalf of the pool. 
+    *   *Gas Optimization:* This reduces the Vault's on-chain cost from an $O(N)$ loop of individual deposits to a flat $O(1)$ single deposit, making it scale easily to thousands of voters without hitting the Block Gas Limit.
+
+3. The Trustless Egress Phase (Merkle Claim)
+
+When the proposal is closed, the Vault returns the assets to the `VoterPool` contract. To withdraw their tokens, individual users pay their own gas to submit a Merkle Proof matching the stored root. The `VoterPool` contract verifies the proof and transfers their original shares (that are not in an opened proposal) back to their wallet.
+
+4. Optional Service Monetization
+Because the platform operator pays the gas to submit the aggregated votes, the `VoterPool` is implemented as an optional premium service. The operator can charge a small service fee (e.g., in basis points on withdrawal or performance fee on yield) to cover operational gas costs and monetize the voting convenience. Direct on-chain voting remains free (except for standard network gas) and accessible directly through the `TreasuryVault`.
 
 #### Governance Security, Reasoning Token Locking
 
@@ -114,13 +134,45 @@ Economic Alignment (Skin in the Game): Locking capital directly ties the voter's
 (note: Future work could intorduce different voting options.)
 
 ### Policy
--
+
+A policy is defined as a contract address on the `proposalBook.withdraw` in the `proposalOpen` function.
+
+A Policy is a smart contract that manages the token owned by the treasury. To maintain transparent, auditable tracking, every policy SHOULD be a Compliant Policy that implements the ITreasuryPolicy interface:
+
+```solidity
+
+    /**
+     * @dev Returns the address of the TreasuryVault this policy belongs to.
+     */
+    function treasuryVault() external view returns (address);
+    /**
+     * @dev Returns the specific proposal number this policy is executing.
+     */
+    function proposalNum() external view returns (uint256);
+    /**
+     * @dev Calculates and returns the total Net Asset Value (NAV) of the policy,
+     * including accrued yields, denominated in the Vault's underlying asset (e.g., USDC).
+     */
+    function getTotalValue() external view returns (uint256);
+    /**
+     * @dev Initiates the wind-down and liquidation process for this policy.
+     * The policy must withdraw/sell its assets and return the underlying funds 
+     * to the TreasuryVault using `depositTreasury()`.
+     */
+    function liquidate() external;
+```
 
 
-### Exiting Proposals
+### Exit a Treasury
 
-EXIT (Shareholder Redemption): A `owner` can introduce an `Proposal.EXIT` ProposalType is specifically reserved for unlocking shareholder liquidity.
-Modular Exit Policies
+EXIT (Shareholder Redemption): A `owner` can introduce an `ProposalType.EXIT` ProposalType is specifically reserved for unlocking shareholder liquidity.
+
+The moreLikely platform will expose a few types of exit policies and deployment methods.
+
+#### Exit Policy Types
+
+The `EXIT` policies are different from the `TXNS` policies. The `EXIT` policies SHOULD be pre-defined contracts that have the exact functions as the 
+
 Because different treasuries require different exit mechanics (e.g., continuous "rage-quitting", quarterly liquidity windows, or full DAO dissolution), the exit logic is handled entirely by external Exit Policy smart contracts.
 
 Deployment: An Exit Policy is typically deployed alongside the TreasuryVault to provide transparent, pre-defined exit rules for early joiners.
