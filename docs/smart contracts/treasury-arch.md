@@ -171,13 +171,41 @@ The moreLikely platform will expose a few types of exit policies and deployment 
 
 #### Exit Policy Types
 
-The `EXIT` policies are different from the `TXNS` policies. The `EXIT` policies SHOULD be pre-defined contracts that have the exact functions as the 
+The `EXIT` policies are different from the `TXNS` policies. The `EXIT` policies SHOULD be pre-defined contracts that have the exact functions as the exit interface. This will expose the entire exit contract to the treasury contract, not allowing an owner to create new exit rules.
 
-Because different treasuries require different exit mechanics (e.g., continuous "rage-quitting", quarterly liquidity windows, or full DAO dissolution), the exit logic is handled entirely by external Exit Policy smart contracts.
+(Future: new Exit Interfaces could be introduced to the community and agreed on, but a new treasury contract MUST be deployed to integrate the new interface in the contract. So at treasury deployment a exit contract MAY not be deployed, but the interface is supported.)
 
-Deployment: An Exit Policy is typically deployed alongside the TreasuryVault to provide transparent, pre-defined exit rules for early joiners.
+Because different treasuries require different exit mechanics (e.g., continuous "rage-quitting", quarterly liquidity windows, or full DAO dissolution), the exit logic is handled entirely by external Exit Policy smart contracts. Below are the types deployable current for moreLikely, as defined in the [Open Treasury spec]():
+
+- `Type 2A`: Immutable, no exit policy is deployed at the time of treasury contract deployment. The contract still supports exit interface but the `owner` does not intend any `treasuryToken` swap.
+
+- Dissolution Exit - `Type 2B` or `Type 2D`: When an owner wants to stop the treasury activities, the owner can triggger a dissolution exit. The owner must close all open policies and return the funds back to the treasury.
+
+If an `owner` abandons its treasury responsibilities and shareholder become aware fo the situation. Share holders can trigger a dissolution exit policy by first creating close proposal request for every open proposal,then returning funds back to the treasury.
+
+For both situations, the dissolution exit policy MUST require all open proposals are closed, and withdrawn(if appliciable).
+
+- Portional Exit - `Type 2C` : Liquidate a specific strategy/portion of tokens and distribute it only to the shareholders who were active at the time of the exit proposal.
+
+We must prevent people from depositing USDC after the exit is announced to exploit the exit pool (front-running).
+
+#### Exit Policy Deployment
+
+An Exit Policy is typically deployed alongside the TreasuryVault to provide transparent, pre-defined exit rules for early joiners.
 Execution: When an EXIT proposal is passed, the Vault routes the approved funds to the designated Exit Policy contract.
 Redemption: The Exit Policy handles the complex logic of accepting a user's TreasuryToken, burning it to remove their voting power, and dispensing their pro-rata share of the underlying asset.
+
+Exit interface:
+``` solidity
+interface IExitPolicy is IERC165 {
+    function treasuryVault() external view returns (address); // the address of the treasury
+    function proposalNum() external view returns (uint256); // the proposalNumber of this Exit(upgradeable depending on exit deployment)
+    function swapRatio() external view returns (uint256); // the agreed treasuryToken swap
+    function exitWindowEnd() external view returns (uint256); 
+    function claimExit(uint256 amount) external;
+}
+
+```
 
 ## Auditing a Treasury
 
