@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import "../interfaces/ITreasuryPolicy.sol";
 
 contract AssetSwapPolicy is Ownable, ITreasuryPolicy {
@@ -142,7 +143,11 @@ contract AssetSwapPolicy is Ownable, ITreasuryPolicy {
         return 0;
     }
 
-    function liquidate() external onlyOwner {
+    function liquidate() external override onlyOwner {
         // Return underlying funds to treasury if applicable
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
+        return interfaceId == type(ITreasuryPolicy).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 }

@@ -41,7 +41,9 @@
   "dependencies": {
     "@0gfoundation/0g-compute-ts-sdk": "^0.9.0",
     "@0gfoundation/0g-storage-ts-sdk": "^1.2.10",
+    "@chainlink/contracts": "^1.4.0",
     "@circle-fin/developer-controlled-wallets": "^10.6.0",
+    "@uniswap/v3-core": "^1.0.1",
     "node-forge": "^1.4.0"
   }
 }

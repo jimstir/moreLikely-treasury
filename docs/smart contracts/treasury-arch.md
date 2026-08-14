@@ -133,6 +133,12 @@ Economic Alignment (Skin in the Game): Locking capital directly ties the voter's
 
 (note: Future work could intorduce different voting options.)
 
+### Join a Treasury
+
+An `onwer` deploying a new treasury SHOULD keep all `approveTokens` of the same asset type(denomination). If not, the token ratio distributed will be mathmatically incorrect allow funds to be taken by later depositors. The platform will openly display the `approvedTokens` of each treasury. Also the trust profile will warn users that the token demonimation do not match and will not recommend users to join.
+
+This is left to the responsiblity of the `owner`, as it will not restrict treasuries to rely on one USD stablecoin, or retrict future treasury innovations where to ratio is purposly manipulated.
+
 ### Policy
 
 A policy is defined as a contract address on the `proposalBook.withdraw` in the `proposalOpen` function.

@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+
 /**
  * @title ITreasuryPolicy
  * @dev The official standard interface for Open Treasury Compliant Policies.
  */
-interface ITreasuryPolicy {
+interface ITreasuryPolicy is IERC165 {
     /**
      * @dev Returns the address of the TreasuryVault this policy belongs to.
      */

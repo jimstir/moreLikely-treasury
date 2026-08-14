@@ -10,6 +10,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import "../interfaces/ITreasuryToken.sol";
 import "../interfaces/ITreasuryPolicy.sol";
+import "../interfaces/IExitPolicy.sol";
 
 contract TreasuryVault is ERC4626 {
     using SafeERC20 for IERC20;
@@ -173,12 +174,13 @@ contract TreasuryVault is ERC4626 {
      * @param policyAddress The address of the proposed policy.
      * @return bool True if compliant, False if non-compliant or a normal wallet.
      */
-    function checkCompliance(address policyAddress) public view returns (bool) {
-        try
-            IERC165(policyAddress).supportsInterface(
-                type(ITreasuryPolicy).interfaceId
-            )
-        returns (bool isCompliant) {
+    function checkCompliance(
+        address policyAddress,
+        bytes4 interfaceId
+    ) public view returns (bool) {
+        try IERC165(policyAddress).supportsInterface(interfaceId) returns (
+            bool isCompliant
+        ) {
             return isCompliant;
         } catch {
             // If the contract doesn't support ERC-165 or reverts, it is NOT compliant
@@ -355,8 +357,11 @@ contract TreasuryVault is ERC4626 {
             require(IERC20(treasToken).balanceOf(msg.sender) > 0);
         }
 
-        if (request == ProposalType.TXNS) {
-            require(checkCompliance(receiver));
+        if (request == ProposalType.TXNS || request == ProposalType.EXIT) {
+            bytes4 reqInterface = (request == ProposalType.TXNS)
+                ? type(ITreasuryPolicy).interfaceId
+                : type(IExitPolicy).interfaceId;
+            require(checkCompliance(receiver, reqInterface));
         }
 
         uint256 num = proposalNum + 1;

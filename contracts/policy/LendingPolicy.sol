@@ -6,6 +6,7 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import "../interfaces/ITreasuryVault.sol";
 import "../interfaces/ITreasuryPolicy.sol";
 
@@ -54,6 +55,10 @@ contract LendingPolicy is ITreasuryPolicy {
     constructor(address _treasuryVault) {
         owner = msg.sender;
         treasuryVault = _treasuryVault;
+    }
+
+    function getTotalValue() external view returns (uint256) {
+        return 0;
     }
 
     /**
@@ -184,7 +189,7 @@ contract LendingPolicy is ITreasuryPolicy {
      * @dev Liquidate an undercollateralized loan.
      * Callable by anyone (or specifically the AI Agent Keeper).
      */
-    function liquidate(address borrower) external {
+    function liquidatePosition(address borrower) external {
         Loan storage loan = loans[borrower];
         require(loan.loanAmount > 0, "No active loan");
 
@@ -214,11 +219,18 @@ contract LendingPolicy is ITreasuryPolicy {
 
         emit Liquidated(borrower, debtToRecover, collateralToSeize, msg.sender);
     }
-    function getTotalValue() external view returns (uint256) {
-        return 0;
-    }
 
-    function liquidate() external onlyOwner {
+    /**
+     * @dev Initiates the wind-down process for this policy.
+     * Restricts call to the owner or the TreasuryVault.
+     */
+    function liquidate() external override {
+        require(msg.sender == owner || msg.sender == treasuryVault, "Only owner or vault allowed");
         // Return underlying funds to treasury if applicable
     }
+
+    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
+        return interfaceId == type(ITreasuryPolicy).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
 }
+
