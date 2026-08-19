@@ -4,11 +4,10 @@ This document outlines the architectural workflows for the `OracleRouter.sol` mo
 
 ## 1. Core Principles
 
-*   **Market-Keyed Architecture :** The Oracle Router is a shared global contract. To prevent multiple vaults from overwriting each other's configurations, the router registry is keyed by the **Market Contract Address** (the specific Uniswap V3 Pool address or Chainlink Aggregator address) instead of the token address.
+*   **Market-Keyed Architecture :** The Oracle Router is a shared global contract. The router registry is keyed by the **Market Contract Address** (the specific Uniswap V3 Pool address or Chainlink Aggregator address) instead of the token address.
 *   **Direct Asset Denomination (No USD Requirement):** Prices are returned in the denomination of the registered market. 
-    *   If Owner A registers the `WETH/WBTC` pool, the price of WETH is returned in `WBTC` terms.
-    *   If Owner B registers the `WETH/USDC` pool, the price of WETH is returned in `USDC` terms.
-    *   This eliminates redundant conversions, saves gas, and allows any treasury to support arbitrary base assets natively.
+    *   Registers the `WETH/WBTC` pool, the price of WETH is returned in `WBTC` terms.
+    *   Allows any treasury to support arbitrary base assets natively.
 *   **Scale Standard:** All returned values are scaled to `1e18` (18 decimals) to ensure compatibility with standard ERC-20 decimal math.
 *   **Registry Reuse:** When registering a market, the router checks if it is already registered. If so, it reuses the existing configuration to save gas.
 

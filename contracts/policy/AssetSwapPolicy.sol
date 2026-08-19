@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import "../interfaces/ITreasuryPolicy.sol";
+import "../interfaces/ITreasuryVault.sol";
 
 contract AssetSwapPolicy is Ownable, ITreasuryPolicy {
     using SafeERC20 for IERC20;
@@ -17,60 +18,101 @@ contract AssetSwapPolicy is Ownable, ITreasuryPolicy {
         uint256 amountIn,
         uint256 amountOut
     );
-    event ProposalDisputed(uint256 indexed proposalId, address indexed disputer, uint256 reviewPeriodEnd);
-    event DisputeResolved(uint256 indexed proposalId);
 
     address public treasuryVault;
-    uint256 public proposalNum;
     address public universalRouter;
-    address public attestationSigner;
-    uint256 public disputePeriod = 1 days;
+    address public oracleRouter;
 
+    address[] public heldTokens;
+    mapping(address => bool) public isTokenHeld;
+    mapping(address => address) public tokenOracleMarkets;
     mapping(uint256 => bool) public executedProposals;
-    mapping(uint256 => bool) public disputedProposals;
-    mapping(uint256 => uint256) public reviewPeriodEnd;
+
+    struct SwapBackRecord {
+        uint256 timestamp;
+        uint256 proposalId; // Can be 0 if general
+        address tokenIn;
+        address tokenOut;
+        uint256 amountIn;
+        uint256 amountOut;
+    }
+
+    struct ExitRecord {
+        uint256 timestamp;
+        address token;
+        uint256 amount;
+    }
+
+    struct LiquidationRecord {
+        uint256 timestamp;
+        uint256 amount; // Snapshot of getTotalValue() at start of liquidation
+    }
+
+    SwapBackRecord[] public swapBackHistory;
+    ExitRecord[] public exitHistory;
+    LiquidationRecord[] public liquidationHistory;
+
+    uint256[] public proposalIds;
+
+    uint256 public override status; // 1 = Liquidated, 0 = Active
+    uint256 public override proposalNum; // Returns latest proposal ID for interface compliance
 
     constructor(
         address _treasuryVault,
         address _universalRouter,
-        address _attestationSigner,
+        address _oracleRouter,
         address _initialOwner
     ) Ownable(_initialOwner) {
         treasuryVault = _treasuryVault;
         universalRouter = _universalRouter;
-        attestationSigner = _attestationSigner;
+        oracleRouter = _oracleRouter;
     }
 
-    function setAttestationSigner(address _attestationSigner) external onlyOwner {
-        attestationSigner = _attestationSigner;
+    function getSwapBackHistory()
+        external
+        view
+        returns (SwapBackRecord[] memory)
+    {
+        return swapBackHistory;
+    }
+
+    function getExitHistory() external view returns (ExitRecord[] memory) {
+        return exitHistory;
+    }
+
+    function getLiquidationHistory()
+        external
+        view
+        returns (LiquidationRecord[] memory)
+    {
+        return liquidationHistory;
+    }
+
+    function getProposalIds() external view returns (uint256[] memory) {
+        return proposalIds;
+    }
+
+    function supportsInterface(
+        bytes4 interfaceId
+    ) external pure override returns (bool) {
+        return
+            interfaceId == type(ITreasuryPolicy).interfaceId ||
+            interfaceId == type(IERC165).interfaceId;
     }
 
     function setUniversalRouter(address _universalRouter) external onlyOwner {
         universalRouter = _universalRouter;
     }
 
-    function setDisputePeriod(uint256 _disputePeriod) external onlyOwner {
-        disputePeriod = _disputePeriod;
+    function setOracleRouter(address _oracleRouter) external onlyOwner {
+        oracleRouter = _oracleRouter;
     }
 
-    // Trigger dispute: pauses proposal execution for a review period.
-    // In production, requires the caller holds a minimum percentage of shares.
-    function triggerDispute(uint256 proposalId) external {
-        disputedProposals[proposalId] = true;
-        reviewPeriodEnd[proposalId] = block.timestamp + disputePeriod;
-        emit ProposalDisputed(proposalId, msg.sender, reviewPeriodEnd[proposalId]);
-    }
-
-    function resolveDispute(uint256 proposalId) external onlyOwner {
-        disputedProposals[proposalId] = false;
-        emit DisputeResolved(proposalId);
-    }
-
-    function isPaused(uint256 proposalId) public view returns (bool) {
-        if (disputedProposals[proposalId]) {
-            return block.timestamp < reviewPeriodEnd[proposalId];
-        }
-        return false;
+    function setTokenOracleMarket(
+        address token,
+        address market
+    ) external onlyOwner {
+        tokenOracleMarkets[token] = market;
     }
 
     // Execute swap using Uniswap Router.
@@ -80,26 +122,16 @@ contract AssetSwapPolicy is Ownable, ITreasuryPolicy {
         address tokenIn,
         address tokenOut,
         uint256 amountIn,
-        uint256 totalVotesFor,
-        uint256 totalVotesAgainst,
-        bytes calldata attestationSignature,
         bytes calldata swapCallData
-    ) external returns (bool) {
+    ) external onlyOwner returns (bool) {
         require(!executedProposals[proposalId], "Proposal already executed");
-        require(!isPaused(proposalId), "Proposal execution is paused due to dispute");
-
-        // Verify AI Attestation Signature
-        bytes32 messageHash = keccak256(abi.encodePacked(proposalId, totalVotesFor, totalVotesAgainst, true));
-        bytes32 ethSignedMessageHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
-        address recovered = recoverSigner(ethSignedMessageHash, attestationSignature);
-        require(recovered == attestationSigner, "Invalid AI attestation signature");
-
-        // Verify voting threshold (e.g. votes in support must exceed votes against)
-        require(totalVotesFor > totalVotesAgainst, "Voting criteria not met");
 
         // Verify balance
         uint256 balanceBefore = IERC20(tokenIn).balanceOf(address(this));
-        require(balanceBefore >= amountIn, "Insufficient tokenIn balance in policy");
+        require(
+            balanceBefore >= amountIn,
+            "Insufficient tokenIn balance in policy"
+        );
 
         // Approve router
         IERC20(tokenIn).forceApprove(universalRouter, amountIn);
@@ -116,38 +148,132 @@ contract AssetSwapPolicy is Ownable, ITreasuryPolicy {
         uint256 amountOut = tokenOutAfter - tokenOutBefore;
         require(amountOut > 0, "Swap returned zero output tokens");
 
-        // Transfer swapped assets back to vault
-        IERC20(tokenOut).safeTransfer(treasuryVault, amountOut);
+        if (!isTokenHeld[tokenOut]) {
+            heldTokens.push(tokenOut);
+            isTokenHeld[tokenOut] = true;
+        }
 
         executedProposals[proposalId] = true;
+        proposalIds.push(proposalId);
+        proposalNum = proposalId;
         emit SwapExecuted(proposalId, tokenIn, tokenOut, amountIn, amountOut);
 
+        // Tokens are explicitly held by the policy to manage as active funds
         return true;
     }
 
-    function recoverSigner(bytes32 _ethSignedMessageHash, bytes memory _sig) internal pure returns (address) {
-        (bytes32 r, bytes32 s, uint8 v) = splitSignature(_sig);
-        return ecrecover(_ethSignedMessageHash, v, r, s);
-    }
+    function swapBack(
+        uint256 proposalId,
+        address tokenIn,
+        address tokenOut,
+        uint256 amountIn,
+        bytes calldata swapCallData
+    ) external onlyOwner returns (uint256 amountOut) {
+        require(
+            IERC20(tokenIn).balanceOf(address(this)) >= amountIn,
+            "Insufficient balance"
+        );
+        IERC20(tokenIn).forceApprove(universalRouter, amountIn);
 
-    function splitSignature(bytes memory sig) internal pure returns (bytes32 r, bytes32 s, uint8 v) {
-        require(sig.length == 65, "invalid signature length");
+        uint256 balBefore = IERC20(tokenOut).balanceOf(address(this));
+        (bool success, ) = universalRouter.call(swapCallData);
+        require(success, "Swap failed");
+        amountOut = IERC20(tokenOut).balanceOf(address(this)) - balBefore;
+        require(amountOut > 0, "Zero output");
 
-        assembly {
-            r := mload(add(sig, 32))
-            s := mload(add(sig, 64))
-            v := byte(0, mload(add(sig, 96)))
+        if (!isTokenHeld[tokenOut]) {
+            heldTokens.push(tokenOut);
+            isTokenHeld[tokenOut] = true;
         }
+
+        swapBackHistory.push(
+            SwapBackRecord({
+                timestamp: block.timestamp,
+                proposalId: proposalId,
+                tokenIn: tokenIn,
+                tokenOut: tokenOut,
+                amountIn: amountIn,
+                amountOut: amountOut
+            })
+        );
     }
-    function getTotalValue() external view returns (uint256) {
-        return 0;
+
+    function exit(address token, uint256 amount) external onlyOwner {
+        uint256 balance = IERC20(token).balanceOf(address(this));
+        require(balance >= amount, "Insufficient balance");
+
+        IERC20(token).forceApprove(treasuryVault, amount);
+        bool ok = ITreasuryVault(treasuryVault).depositTreasury(
+            IERC20(token),
+            amount,
+            false,
+            0
+        );
+        require(ok, "Vault deposit failed");
+
+        exitHistory.push(
+            ExitRecord({
+                timestamp: block.timestamp,
+                token: token,
+                amount: amount
+            })
+        );
     }
 
     function liquidate() external override onlyOwner {
-        // Return underlying funds to treasury if applicable
+        status = 1;
+        liquidationHistory.push(
+            LiquidationRecord({
+                timestamp: block.timestamp,
+                amount: getTotalValue() // Optional comment: total value at the start of liquidation
+            })
+        );
     }
 
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(ITreasuryPolicy).interfaceId || interfaceId == type(IERC165).interfaceId;
+    function getTotalValue() public view override returns (uint256) {
+        uint256 total = 0;
+        for (uint i = 0; i < heldTokens.length; i++) {
+            address t = heldTokens[i];
+            uint256 bal = IERC20(t).balanceOf(address(this));
+            if (bal > 0) {
+                address market = tokenOracleMarkets[t];
+                if (market != address(0)) {
+                    (bool s1, bytes memory d1) = oracleRouter.staticcall(
+                        abi.encodeWithSignature("getPrice(address)", market)
+                    );
+                    if (s1 && d1.length > 0) {
+                        uint256 price = abi.decode(d1, (uint256));
+
+                        uint8 decimals = 18;
+                        (bool s2, bytes memory d2) = t.staticcall(
+                            abi.encodeWithSignature("decimals()")
+                        );
+                        if (s2 && d2.length > 0) {
+                            decimals = abi.decode(d2, (uint8));
+                        }
+
+                        uint256 normalizedValue = (bal * price) /
+                            (10 ** decimals);
+                        total += normalizedValue;
+                    }
+                }
+            }
+        }
+        return total;
+    }
+
+    function liquidateToken(address token) external onlyOwner {
+        require(status == 1, "Policy not in liquidated state");
+        uint256 balance = IERC20(token).balanceOf(address(this));
+        require(balance > 0, "No balance to liquidate");
+
+        IERC20(token).forceApprove(treasuryVault, balance);
+        bool ok = ITreasuryVault(treasuryVault).depositTreasury(
+            IERC20(token),
+            balance,
+            false,
+            0
+        );
+        require(ok, "Liquidation deposit failed");
     }
 }

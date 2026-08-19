@@ -107,7 +107,7 @@ To maximize voter participation and eliminate gas costs for shareholders, the pr
 
 1. The Deposit Phase
 
-Shareholders who want to vote gaslessly deposit their `TreasuryToken` into the `VoterPool` contract. The pool tracks their deposits internally(may revert if address not a member?***). By locking tokens inside the pool first, voters cannot transfer their tokens away to front-run and crash the relayer's transaction (resolving the Gas Exhaustion/Griefing exploit).
+Shareholders who want to vote gaslessly deposit their `treasuryToken` into the `VoterPool` contract. The pool tracks their deposits internally(must be `treasuryToken`). By locking tokens inside the pool first, voters cannot transfer their tokens away to front-run and crash the relayer's transaction (resolving the Gas Exhaustion/Griefing exploit).
 
 2. The Off-Chain Signature & Aggregation Phase
 

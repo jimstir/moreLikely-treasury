@@ -9,6 +9,11 @@ import "@openzeppelin/contracts/utils/introspection/IERC165.sol";
  */
 interface ITreasuryPolicy is IERC165 {
     /**
+     * @dev Returns the current status of the policy
+     1 = Liquadted 
+     */
+    function status() external view returns (uint256);
+    /**
      * @dev Returns the address of the TreasuryVault this policy belongs to.
      */
     function treasuryVault() external view returns (address);

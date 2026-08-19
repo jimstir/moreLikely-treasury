@@ -47,6 +47,14 @@ contract LendingPolicy is ITreasuryPolicy {
     // Allowed collateral tokens
     mapping(IERC20 => bool) public acceptedCollateral;
 
+    address public oracleRouter;
+    mapping(address => address) public tokenOracleMarkets;
+    address[] public activeTokens;
+    mapping(address => bool) public isTokenTracked;
+    mapping(address => uint256) public totalOutstandingLoans;
+
+    uint256 public override status; // 1 = Liquidated, 0 = Active
+
     modifier onlyOwner() {
         require(msg.sender == owner, "Only owner can call this");
         _;
@@ -57,8 +65,40 @@ contract LendingPolicy is ITreasuryPolicy {
         treasuryVault = _treasuryVault;
     }
 
-    function getTotalValue() external view returns (uint256) {
-        return 0;
+    function setOracleRouter(address _oracleRouter) external onlyOwner {
+        oracleRouter = _oracleRouter;
+    }
+
+    function setTokenOracleMarket(address token, address market) external onlyOwner {
+        tokenOracleMarkets[token] = market;
+    }
+
+    function getTotalValue() public view override returns (uint256) {
+        uint256 total = 0;
+        for (uint i = 0; i < activeTokens.length; i++) {
+            address t = activeTokens[i];
+            uint256 cash = IERC20(t).balanceOf(address(this));
+            uint256 debt = totalOutstandingLoans[t];
+            uint256 totalManaged = cash + debt;
+            if (totalManaged > 0) {
+                address market = tokenOracleMarkets[t];
+                if (market != address(0) && oracleRouter != address(0)) {
+                    (bool s1, bytes memory d1) = oracleRouter.staticcall(abi.encodeWithSignature("getPrice(address)", market));
+                    if (s1 && d1.length > 0) {
+                        uint256 price = abi.decode(d1, (uint256));
+                        uint8 decimals = 18;
+                        (bool s2, bytes memory d2) = t.staticcall(abi.encodeWithSignature("decimals()"));
+                        if (s2 && d2.length > 0) {
+                            decimals = abi.decode(d2, (uint8));
+                        }
+                        total += (totalManaged * price) / (10**decimals);
+                    }
+                } else {
+                    total += totalManaged;
+                }
+            }
+        }
+        return total;
     }
 
     /**
@@ -111,6 +151,7 @@ contract LendingPolicy is ITreasuryPolicy {
      * For the scope of this policy module, we assume 1:1 price parity for simplicity, or that the tokens are pegged.
      */
     function takeLoan(IERC20 loanToken, uint256 amount) external {
+        require(status == 0, "Policy is liquidated");
         Loan storage loan = loans[msg.sender];
         require(loan.collateralAmount > 0, "No collateral deposited");
         require(amount > 0, "Loan amount must be > 0");
@@ -137,6 +178,11 @@ contract LendingPolicy is ITreasuryPolicy {
         require(newTotalDebt <= maxBorrow, "Exceeds Maximum LTV");
 
         loan.loanAmount = newTotalDebt;
+        totalOutstandingLoans[address(loanToken)] += amount;
+        if (!isTokenTracked[address(loanToken)]) {
+            activeTokens.push(address(loanToken));
+            isTokenTracked[address(loanToken)] = true;
+        }
         loanToken.safeTransfer(msg.sender, amount);
 
         emit LoanTaken(msg.sender, amount);
@@ -156,6 +202,7 @@ contract LendingPolicy is ITreasuryPolicy {
         loan.loanToken.safeTransferFrom(msg.sender, address(this), repayAmount);
 
         loan.loanAmount -= repayAmount;
+        totalOutstandingLoans[address(loan.loanToken)] -= repayAmount;
 
         emit LoanRepaid(msg.sender, repayAmount);
     }
@@ -206,6 +253,7 @@ contract LendingPolicy is ITreasuryPolicy {
         // Reset loan
         loan.loanAmount = 0;
         loan.collateralAmount = 0;
+        totalOutstandingLoans[address(loan.loanToken)] -= debtToRecover;
 
         // Transfer collateral to liquidator (incentive) or back to treasury
         // In a real system, the liquidator pays off the debt to seize the collateral.
@@ -220,13 +268,27 @@ contract LendingPolicy is ITreasuryPolicy {
         emit Liquidated(borrower, debtToRecover, collateralToSeize, msg.sender);
     }
 
+    function status() external view override returns (uint256) {
+        return status;
+    }
+
     /**
      * @dev Initiates the wind-down process for this policy.
      * Restricts call to the owner or the TreasuryVault.
      */
     function liquidate() external override {
         require(msg.sender == owner || msg.sender == treasuryVault, "Only owner or vault allowed");
-        // Return underlying funds to treasury if applicable
+        status = 1;
+    }
+
+    function liquidateToken(address token) external onlyOwner {
+        require(status == 1, "Not liquidated");
+        uint256 balance = IERC20(token).balanceOf(address(this));
+        require(balance > 0, "No balance to liquidate");
+
+        IERC20(token).forceApprove(treasuryVault, balance);
+        bool ok = ITreasuryVault(treasuryVault).depositTreasury(IERC20(token), balance, false, 0);
+        require(ok, "Liquidation deposit failed");
     }
 
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {

@@ -2,11 +2,44 @@
 
 This specification outlines the components, data models, and on-chain interactions for the moreLikely Smart Treasury application.
 
+### Core Components
+
+- **Key Application Flows:**
+  - Onboarding & Web3 Connection
+  - Joining the Treasury (Asset Deposit)
+  - Create a Treasury
+  - Deploying the Owner Agent
+  - AI Agent Architecture (Autonomous Operation)
+  - Audit Components (Trusty Profile)
+  - Off-Chain Voting (VoterPool)
+
+- **Components Breakdown:**
+  - Treasury Dashboard & Metrics
+  - Treasury Configuration & Goals
+  - Governance & Voting Module
+  - Audit & Dispute Module
+  - AI Agent Module
+
+- **Shared Smart Contracts:** Reference for underlying contract integration.
+- **Audit Getters:**
+  - AuditBeforeJoin (UI Component)
+  - AuditInteractionsWidget (UI Component)
+  - PolicyTracker / Active Strategies Dashboard
+  - VoterRecordWidget (UI Component)
+
+
+- **CreateTreasuryWidget:** Interface for users to deploy a new smart treasury.
+- **GovernorControlPanel:** Dashboard to deploy and manage the AI Owner Agent.
+- **AI Owner Agent:** An autonomous LLM agent running on the owner's selected AI network.
+- **AuditInteractionsWidget:** Component to monitor treasury activities and interactions.
 ---
 
-## Part 1: Key Application Flows
+## Key Application Flows
 
-### 1. Onboarding & Web3 Connection
+### Onboarding & Web3 Connection
+
+A wallet needs to be connected which acts as the user's identity.
+
 - **Component:** `ConnectWalletModal`
 - **Trigger:** User lands on the application unauthenticated and clicks "Connect Wallet".
 - **Action:**
@@ -18,19 +51,8 @@ This specification outlines the components, data models, and on-chain interactio
   - Queries `WhosOwner()` on `TreasuryVault` contract to determine if the user is the Treasury Owner/Operator, a standard stakeholder or a new user looking to join a treasury.
   - Updates user state in application context (`isOwner: true/false`, `isStakeholder: true/false`).
 
-### 2. Joining the Treasury (Asset Deposit)
-- **Component:** `JoinTreasuryModal`
-- **Trigger:** User clicks "Deposit Assets" on the dashboard.
-- **Action:**
-  - Prompt user to select the approved ERC20 asset for the desired treasury and requires the user holds the balance amount then input deposit `amount`.
-  - **ERC20-Only Constraint:** The treasury require the user to use treasury approved ERC20 tokens.
-  - Triggers ERC20 `approve(vaultAddress, amount)` transaction.
-  - Upon transaction confirmation, triggers `joinTreasury(tokenAddress, amount, isProposal, proposalNum)` on the `TreasuryVault` contract.
-- **Backend / On-chain Sync:**
-  - Vault contract calls `ITreasuryToken.mintTreasury(msg.sender, amount)` to mint `TreasuryToken` 1:1.
-  - UI updates user's local balance of the deposit token and `TreasuryToken` shares.
+### Create a Treasury
 
-### 3. Create a Treasury
 - **Component:** `CreateTreasuryWidget`
 - **Trigger:** A user wants to deploy a new smart treasury and clicks "Create a Treasury".
 - **Action:**
@@ -43,7 +65,8 @@ This specification outlines the components, data models, and on-chain interactio
   - Saves the newly deployed contract addresses to the user's active session and application database.
   - Redirects the user to the Treasury Operator Dashboard.
 
-### 4. Deploying the Owner Agent
+### Deploying the Treasury Governor Agent
+
 - **Component:** `GovernorControlPanel`
 - **Trigger:** Owner toggles Governor Mode from "Manual" to "AI Governor".
 - **Action:**
@@ -67,7 +90,22 @@ This specification outlines the components, data models, and on-chain interactio
   - Configures the agent's system prompt with the treasury address, policy contract address, treasury goals, and approved tokens.
   - Initializes the invocation scheduler at the owner-configured frequency.
 
-### 4.1 AI Governor Deployment Approaches
+### Joining the Treasury (Asset Deposit)
+
+- **Component:** `JoinTreasuryModal`
+- **Trigger:** User clicks "Deposit Assets" on the dashboard.
+- **Action:**
+  - Prompt user to select the approved ERC20 asset for the desired treasury and requires the user holds the balance amount then input deposit `amount`.
+  - **ERC20-Only Constraint:** The treasury require the user to use treasury approved ERC20 tokens.
+  - Triggers ERC20 `approve(vaultAddress, amount)` transaction.
+  - Upon transaction confirmation, triggers `joinTreasury(tokenAddress, amount, isProposal, proposalNum)` on the `TreasuryVault` contract.
+- **Backend / On-chain Sync:**
+  - Vault contract calls `ITreasuryToken.mintTreasury(msg.sender, amount)` to mint `TreasuryToken` 1:1.
+  - UI updates user's local balance of the deposit token and `TreasuryToken` shares.
+
+## Components Descriptions
+
+### AI Governor Deployment Approaches
 
 The AI Governor architecture is designed to be highly flexible, allowing Treasury Owners to deploy the agent with varying degrees of decentralization. Crucially, **shareholders do not need to check Etherscan to verify the agent's setup.** The `GovernorControlPanel` dashboard will allow users to connect their wallet and make direct view function calls to verify the `AgentGasEscrow` and the authorized infrastructure.
 
@@ -104,7 +142,7 @@ The AI Governor architecture is designed to be highly flexible, allowing Treasur
 - **Verification:** The dashboard displays the self-hosted EOA address registered in the `AgentGasEscrow`. The owner publishes an Architecture Manifest detailing their self-hosted setup, and publishes the inference receipts just like the managed approach.
 
 
-### 5. AI Agent Architecture (Autonomous Operation)
+### AI Agent Architecture (Autonomous Operation)
 - **Component:** `AI Owner Agent` — an autonomous LLM agent running on the owner's selected AI network (0G Compute Network by default).
 - **Architecture:** The backend drives the agent loop. On each scheduled invocation, the backend sends an inference request to the AI network (e.g. 0G Compute `/chat/completions`) containing the system prompt and tool definitions. The LLM responds with tool call requests. The backend executes each requested tool locally (reading on-chain state, fetching market data, submitting transactions via the Circle Developer-Controlled Wallet API), sends the tool results back to the LLM, and continues the conversation until the LLM returns a final response with no further tool calls. The LLM never directly accesses the backend server or the API credentials — it only reasons and requests tool calls; the backend handles all execution.
 - **System Prompt Context:** The agent receives its treasury address, policy contract address, treasury goals, and the set of approved tokens. The system prompt instructs the agent to manage the treasury according to stakeholder-defined goals.
@@ -218,6 +256,7 @@ The agent is free to call tools in whatever order its reasoning dictates. A typi
 However, the agent may deviate from this sequence based on its reasoning. For example, it may decide to check multiple token pairs, skip proposing if risk checks fail, or prioritize closing a stale proposal before evaluating new trades.
 
 #### Conversation Logging & Audit Trail
+
 Every invocation of the agent produces a complete conversation transcript that is stored in the database for auditability. The transcript captures the full request-response cycle between the backend and the AI network, providing a tamper-evident record of the agent's reasoning and actions.
 
 Each stored transcript includes:
@@ -235,6 +274,7 @@ Each stored transcript includes:
 Transcripts are stored in the `AgentInvocation` database model and linked to the treasury. They are surfaced to owners and stakeholders through the `AuditInteractionsWidget` (see §6). When a proposal is created or executed during an invocation, the transcript is cross-linked to the `DecisionReport` for that proposal (storing the 0G `dataRoot` if applicable), providing a complete audit chain from the agent's first observation through to the on-chain action.
 
 #### On-Chain Safety Boundary
+
 Regardless of the agent's reasoning, the smart contracts enforce hard safety rules:
 - `AssetSwapPolicy.executeSwap()` requires a valid ECDSA attestation signature, voting threshold (`totalVotesFor > totalVotesAgainst`), and sufficient token balance.
 - `triggerDispute()` allows any stakeholder with >1% shares to pause execution.
@@ -242,10 +282,10 @@ Regardless of the agent's reasoning, the smart contracts enforce hard safety rul
 
 The agent cannot bypass these on-chain checks. The tools are the agent's interface to the world; the contracts are the world's guardrails on the agent.
 
-### 6. Audit Components (Trusy Profile)
+### Audit Components (Trusy Profile)
 
 **Component:** `AuditInteractionsWidget`
-- **Trigger:** Stakeholder or third-party auditor flags an active proposal or decision as malicious.
+- **Trigger:** Stakeholder runs public attirbute audit.
 - **Action:**
   - Stakeholder views the stored agent conversation transcripts — the full sequence of LLM reasoning, tool calls (with exact parameters), tool results, and on-chain transaction hashes produced during each invocation. This provides complete visibility into why the agent made a decision and what data it was acting on.
   - Stakeholder can inspect the `DecisionReport` linked to any proposal, which includes the agent's rationale, the market data snapshot at the time of the decision, and the Uniswap swap routes/pricing used.
@@ -262,6 +302,7 @@ The agent cannot bypass these on-chain checks. The tools are the agent's interfa
   - Stakeholder views and monitors the current list of approved tokens.
   **Minor Warning Metric**: If a treasury accepts multiple tokens with different fiat values (e.g., accepting both USDC and a volatile asset, or even USDC and a different fiat-pegged stablecoin), the UI MUST display a severe warning.
 
+
 #### Trust Profile
 
 The UI MUST compile a Trust Profile of the treasury and display it transparently to stakeholders before they interact with the platform. This profile is evaluated using the following criteria:
@@ -269,9 +310,65 @@ The UI MUST compile a Trust Profile of the treasury and display it transparently
 *   **Owner Governance Override:** The Treasury Owner has the administrative rights to unilaterally close policies and recall funds early to protect the treasury in volatile markets (via `proposalClose()`).
 *   **Token Add Control:** The owner could use `ADD_TOKEN` proposals. The UI must evaluate if the owner holds enough voting power to pass an `ADD_TOKEN` proposal by themselves, which would allow them to change the math of the treasury unilaterally.
 *   **Consensus Quorum Level:** The UI must display the immutable `votingThres` variable (basis points converted to percentage, e.g., 75%). This informs users of the supermajority requirement needed to pass major treasury restructuring proposals or close strategies. A lower threshold indicates higher centralization risk, whereas a higher threshold indicates democratic security but higher risk of governance gridlock.
-
+*   **Strategy Rebalancing & Asset Deviation Risk (Swap Policy):** While the policy's `swapBack` function provides necessary operational flexibility to trade assets and rebalance portfolios, it presents a potential centralization risk. A malicious owner/manager could execute a proposal under the guise of acquiring a "safe" token (e.g. USDC), but subsequently call `swapBack` to swap into high-risk, volatile, or unapproved tokens that do not align with the treasury's goals.
+    *   **UI Trust Profile Metric:** The UI's Trust Profile MUST query the history of swaps (`getSwapBackHistory()`) and compare current holdings (`heldTokens`) against the originally proposed tokens. Any significant deviation, or accumulation of high-risk assets, must be flagged as a critical warning attribute in the owner behavior profile.
+*   **Lending Policy Default-Risk Management:** If the treasury implements a `LendingPolicy`, the Trust Profile must audit and display the management model of the policy to calculate the default-risk safety rating. The UI evaluates this by identifying which of the three execution paths is active:
+    *   **AI Governor Path (Highest Trust):** If an autonomous AI Governor is actively authorized on the Lending Policy, the Trust Profile displays a high-security status. The AI continuously monitors loan health factors and automatically triggers immediate on-chain `seizeCollateral()` and swap-backs upon default, minimizing bad debt.
+    *   **Manual Owner Path (Medium Trust / Centralization Risk):** If the policy relies on the human owner to manually call `seizeCollateral()`, the UI displays a warning. Humans are subject to delays, manual errors, or inactivity during rapid market crashes, increasing default exposure.
+    *   **Public Portal Dependency (Lowest Trust / Fallback):** If there is no active AI or active owner monitoring, the policy relies entirely on public searchers. The UI warns that low-value loans (where gas costs exceed the liquidation bonus) will likely sit in default forever, leading to capital lockups and treasury poor performance.
 
 ---
+
+### Off-Chain Voting (VoterPool)
+
+A treasury has the option to conduct off-chain voting while remaining transparent for all participants.
+
+Off-chain vote may be conducted in voting periods compared to the on-chain defualt open voting until the proposal is closed. So every pool can set a predefined voting period time on the VotingPool contract that the owner, authorized users, or any thrid party can view. 
+
+A merkle tree will store an up to date, balance of all shareholders that have active balances in the voting pool. This includes, current balance of `treasuryTokens` that are not in an active proposal and the current active vote for each proposal for each shareholder. The contract will store the merkle root, and the platform will make the entire merkle tree available.
+
+(Note: this is a hybrid, centralized/decentralized solution as the merkle tree is stored on the centralized server controled by the platform. But since deposits need to occur first, if the merkle tree becomes unavailable, the voterPool should be able to be decommisioned, closing every propsal it is in and returning `treasuryToken`s to the voterPool contract. After the contract confirms all proposals are closed, shareholders can withdraw. )
+
+The reason for a voting period is to help transparency of how the merkle tree wil be generated and when the root will be added on-chain. If the owner needs more time than the set period, another voting round based on the defined voting period time can happen again, with the merkle tree is updated with new votes and the vote transaction not occuring. This all happens off-chain, on the vote transaction and merkle root updates happen on-chain. 
+
+#### Merkle Proof Contruction
+
+**Voting (Root Construction):** 
+  - **Signature Collection:** A user holding `vTokens` casts a gasless vote by signing an EIP-712 typed data payload (containing their address, vote amount, proposal ID, and vote direction) and sending it to the backend platform.
+
+  if the user votes no, this is not translated on-chain, as the treasury only records yes votes. But this information can be used to on the platform for other metrics.
+  - **Verification:** When the voting period closes( also not enforced on-chain, this is only enforced by the platform), the backend verifies all collected signatures to prove authenticity. It also queries the `VoterPool` contract to ensure each signer actually holds enough `vTokens` to back their `voteAmount`.
+  - **Tree Construction:** The signatures themselves are not placed in the tree. Instead, the backend extracts the validated facts from each signature: `(voterAddress, voteAmount, proposalId)`. It constructs a Merkle Tree where each leaf is the packed hash of this data: `keccak256(abi.encodePacked(voterAddress, voteAmount, proposalId))`. This tree is presented on the UI for the specific proposal, to all share holders(stored by the platform backend).
+  - **On-chain Submission:** The backend generates the Merkle Root of this tree. The relayer submits this single root (along with the total aggregated vote amount) to the `submitBatchVote` function on the `VoterPool` contract, committing the root on-chain for future exit verification.
+
+**Voting Pool Tracking Open Proposals:**
+
+The `VoterPool` contract must maintain a mapping of the submitted Merkle Roots for all active proposals it has voted on within the `TreasuryVault`. For example, if the provider has submitted bulk transactions for 10 different active proposals, the contract stores 10 active Merkle Roots.
+
+- **Public Auditing:** Any user or auditor can grab these 10 Merkle Roots directly from the blockchain. By matching them against the off-chain vote data (published by the platform), they can reconstruct the Merkle Trees and calculate the exact locked voting balance of any user at any given time. This provides absolute transparency based strictly on finalized on-chain bulk transactions, explicitly ignoring any pending or un-submitted off-chain signatures.
+
+- **Cross-Contract Verification:** Other smart contracts within the ecosystem (such as Exit Policies or Lending modules) can reliably verify a user's locked state. To do this, the external contract queries the `VoterPool` for the active `merkleRoots`. The user then provides a Merkle Proof for their vote in each active proposal. By verifying these proofs on-chain, the external contract can cryptographically confirm exactly how many of the user's `vTokens` are currently locked in open proposals without needing to trust an off-chain oracle.
+
+**Exit the Voting Pool (Proof Generation):**
+
+When a proposal is closed, the provider should withdraw the `treasuryToken` from the proposal, and mark the merkle root `closed`. 
+Note: The `close` should happen in the same function that the owner does `proposalWithdrawal`. but the proposalClose function should have happened already.
+
+If a user needs to claim their tokens out of the pool, they should verify the current balance of their `treasuryTokens` not in an active merkle root. 
+The proof generated that specific user about their pool account is submitted. The proof is an array of `bytes32` sibling hashes. The user submits this proof on-chain to the `claimExit(amount, proposalId, proof)` function. The smart contract reconstructs the user's leaf using `msg.sender` and verifies it against the saved Merkle Root to release their funds.
+
+#### Off-Chain Component Definition
+
+- **Component:** `JoinVoterPoolModal`
+- **Trigger:** User wants to vote gaslessly and clicks "Deposit to Voter Pool".
+- **Action:**
+  - Prompts user to input the amount of `TreasuryToken` to deposit.
+  - Triggers ERC20 `approve(voterPoolAddress, amount)` transaction for the `TreasuryToken`.
+  - Upon confirmation, triggers `depositTokens(amount)` on the `VoterPool` contract.
+- **Backend / On-chain Sync:**
+  - `VoterPool` contract locks the `TreasuryToken` and mints a strictly non-transferable (soulbound) `vToken` receipt 1:1 to the user.
+  - UI updates user's local balance, deducting `TreasuryToken` and crediting `vToken`.
+  - The user is now eligible to sign gasless votes off-chain via the platform.
 
 ## Part 2: Full Stack Components Breakdown
 
@@ -298,14 +395,9 @@ The UI MUST compile a Trust Profile of the treasury and display it transparently
     - `Off-Chain Voting Portal`: Allows stakeholders to cast gasless cryptographic signature votes.
     - `Attestation Broadcaster`: Collects off-chain votes, aggregates them, and calls the contract's attestation verification endpoint to lock/unlock on-chain execution.
 
-### 4. Audit & Dispute Module
-- **`AuditInteractionsWidget`** (UI Component)
-    - `Recipient Registry`: Displays all proposal request recipients.
-    - `Report Dispute Button`: Form to submit malicious activity reports.
-    - `Audit Status Panel`: Displays current audit state (Active, Paused, Resolved) and remaining review period timer.
-- **`AuditBeforeJoin`** (UI Component)
 
-### 5. AI Agent Module
+
+### AI Agent Module
 The AI agent logic is implemented as a backend module (not API endpoints). The module contains:
 
 - **Agent Runner** — The core invocation loop. Called by the backend scheduler at the owner-configured frequency. Constructs the inference request (system prompt + tool definitions + conversation history), sends it to the selected AI network, processes tool call responses, executes tools locally, and loops until the LLM completes. Stores the full conversation transcript on completion.

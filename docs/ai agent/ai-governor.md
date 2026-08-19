@@ -114,6 +114,17 @@ Lending protocols require constant vigilance to maximize yield and prevent liqui
   3. **Shareholders:** `vote()`
   4. **Manager (AI/Human):** Executes the lending policy transaction.
 
+#### 5. Lending Policy: Automated Liquidation Flow (Fallback Path)
+Lending policies require immediate repossession and conversion of collateral during a borrower default to protect the treasury from market risk.
+- **AI Governor Responsibility:** The Agent continuously monitors active loans in the `LendingPolicy` contract. If a loan defaults (due to LTV breach or time expiry), the Agent automatically executes the fallback path. It calls `seizeCollateral(borrower)` on the lending contract, repossessing the collateral (e.g. WETH) to the `TreasuryVault`. It then scans historical proposals to locate the registered `AssetSwapPolicy` contract, transfers the WETH to the swap policy, and triggers `executeSwap()` to sell it for the vault's base asset (e.g. USDC). The swap policy then calls `depositTreasury(..., true, proposalId)`, automatically updating the vault ledger and closing the loop.
+- **Human Owner Responsibility (Non-AI):** The human owner must manually track loan health, call `seizeCollateral()`, locate the swap policy, draft a swap proposal, and manually execute the trade—exposing the treasury to severe price drop risks during the delay.
+- **Execution Schema:**
+  1. **AI Agent:** Monitors loan health and detects a default.
+  2. **AI Agent:** Calls `seizeCollateral(borrower)` on the Lending Policy contract.
+  3. **AI Agent:** Transfers seized collateral from the Vault to the `AssetSwapPolicy` contract.
+  4. **AI Agent:** Calls `executeSwap()` on the `AssetSwapPolicy` to trade collateral back to the base asset.
+  5. **AssetSwapPolicy:** Executes Uniswap trade and returns base assets via `depositTreasury()` to settle the ledger.
+
 ## Copyright
 
 Copyright and related rights waived via [CC0](https://creativecommons.org/publicdomain/zero/1.0/).
