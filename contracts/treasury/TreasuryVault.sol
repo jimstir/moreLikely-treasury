@@ -120,7 +120,7 @@ contract TreasuryVault is ERC4626 {
         treasName = tresName;
         treasToken = tToken;
         approvedToken[deToken] = true;
-        _tokenList[0] = deToken;
+        _tokenList.push(deToken);
         votingThres = votingTh;
     }
 
@@ -212,7 +212,7 @@ contract TreasuryVault is ERC4626 {
         require(proposalBook[proposal].request == ProposalType.ADD_TOKEN);
         approvedToken[token] = true;
         list += 1;
-        _tokenList[list] = token;
+        _tokenList.push(token);
         return list;
     }
 

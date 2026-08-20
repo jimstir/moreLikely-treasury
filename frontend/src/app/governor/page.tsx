@@ -1,13 +1,26 @@
 "use client";
 
-import React, { useState, Suspense } from 'react';
+import React, { useState, Suspense, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import pkg from '../../../package.json';
+import TrustProfileWidget from '../components/TrustProfileWidget';
+import { useWeb3 } from '@/context/Web3Context';
 
 function GovernorContent() {
   const searchParams = useSearchParams();
   const id = searchParams.get('id');
   const [activeTab, setActiveTab] = useState('deploy');
+  const { address } = useWeb3();
+  const [vaultAddress, setVaultAddress] = useState<string | null>(null);
+
+  useEffect(() => {
+    // In a real app, you would query the DB for the treasury details to get the vaultAddress.
+    // For now, we mock it or expect the UI to pass it down.
+    // Setting a mock vault address if ID is present for demo purposes.
+    if (id) {
+      setVaultAddress("0xMockVaultAddressForDemo");
+    }
+  }, [id]);
   
   // Deploy State
   const [treasuryNetwork, setTreasuryNetwork] = useState('arc_testnet');
@@ -69,7 +82,29 @@ function GovernorContent() {
         >
           Manage
         </button>
+        {id && (
+          <button 
+            style={{...styles.tab, borderBottom: activeTab === 'trust' ? '2px solid #0070f3' : 'none', fontWeight: activeTab === 'trust' ? 'bold' : 'normal'}}
+            onClick={() => setActiveTab('trust')}
+          >
+            Trust Profile
+          </button>
+        )}
       </div>
+
+      {activeTab === 'trust' && id && vaultAddress && address && (
+        <TrustProfileWidget 
+          treasuryId={id} 
+          vaultAddress={vaultAddress} 
+          userAddress={address} 
+        />
+      )}
+      
+      {activeTab === 'trust' && id && (!vaultAddress || !address) && (
+        <div style={styles.card}>
+          <p>Please connect your wallet to view the Trust Profile.</p>
+        </div>
+      )}
 
       {activeTab === 'deploy' && (
         <div style={styles.card}>

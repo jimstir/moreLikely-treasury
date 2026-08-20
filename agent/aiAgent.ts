@@ -1,45 +1,28 @@
 import { ethers } from "ethers";
-import { ComputeClient } from "@0gfoundation/0g-compute-ts-sdk";
 import { initiateDeveloperControlledWalletsClient } from '@circle-fin/developer-controlled-wallets';
+import { IAIAgent, ILLMProvider, TreasuryState, MarketData, TreasuryGoals, TradeRecommendation } from './interfaces';
 
-export interface TreasuryState {
-    assets: string[];
-    balances: { [token: string]: string };
-}
+export { TreasuryGoals, TradeRecommendation, TreasuryState };
 
-export interface MarketData {
-    prices: { [token: string]: number };
-    liquidity: { [token: string]: string };
-}
-
-export interface TreasuryGoals {
-    maxTokenAllocationPercent: { [token: string]: number };
-    slippageTolerancePercent: number;
-    stopLossPercent: { [token: string]: number };
-}
-
-export interface TradeRecommendation {
-    recommendTrade: boolean;
-    tokenIn: string;
-    tokenOut: string;
-    amountIn: string;
-    rationale: string;
-}
-
-export class AIOwnerAgent {
+export class AIOwnerAgent implements IAIAgent {
     private provider: ethers.Provider;
-    private circleClient: ReturnType<typeof initiateDeveloperControlledWalletsClient>;
-    private walletId: string;
+    private circleClient?: ReturnType<typeof initiateDeveloperControlledWalletsClient>;
+    private walletId?: string;
+    private agentWallet?: ethers.Wallet;
+    
+    public llmProvider?: ILLMProvider;
+    public vaultAddress: string;
+    public policyAddress: string;
+    public model: string;
+
     private zeroGComputeApiKey?: string;
     private zeroGComputeBaseUrl?: string;
 
-    public model: string;
-
     constructor(
         rpcUrlOrProvider: string | ethers.Provider,
-        circleApiKey: string,
-        circleEntitySecret: string,
-        walletId: string,
+        circleApiKeyOrPrivateKey: string,
+        circleEntitySecretOrApiKey?: string,
+        walletId?: string,
         zeroGComputeApiKey?: string,
         zeroGComputeBaseUrl?: string,
         model: string = "glm-5.2"
@@ -50,15 +33,45 @@ export class AIOwnerAgent {
         } else {
             this.provider = rpcUrlOrProvider;
         }
-        
-        this.walletId = walletId;
-        this.circleClient = initiateDeveloperControlledWalletsClient({
-            apiKey: circleApiKey,
-            entitySecret: circleEntitySecret,
-        });
 
-        this.zeroGComputeApiKey = zeroGComputeApiKey;
-        this.zeroGComputeBaseUrl = zeroGComputeBaseUrl;
+        // Support both Circle Developer-Controlled Wallets and direct EOA signing (for testing)
+        if (circleApiKeyOrPrivateKey.startsWith("0x")) {
+            this.agentWallet = new ethers.Wallet(circleApiKeyOrPrivateKey, this.provider);
+            // Shift parameters for local EOA mode compatibility in tests
+            this.zeroGComputeApiKey = circleEntitySecretOrApiKey;
+            this.zeroGComputeBaseUrl = walletId;
+            this.model = zeroGComputeApiKey || "glm-5.2";
+            this.vaultAddress = "";
+            this.policyAddress = "";
+        } else {
+            this.circleClient = initiateDeveloperControlledWalletsClient({
+                apiKey: circleApiKeyOrPrivateKey,
+                entitySecret: circleEntitySecretOrApiKey || "",
+            });
+            this.walletId = walletId;
+            this.zeroGComputeApiKey = zeroGComputeApiKey;
+            this.zeroGComputeBaseUrl = zeroGComputeBaseUrl;
+            this.vaultAddress = "";
+            this.policyAddress = "";
+        }
+    }
+
+    // IAIAgent interface: monitorState
+    async monitorState(vaultAddress: string): Promise<TreasuryState> {
+        return this.monitorCurrentState(vaultAddress);
+    }
+
+    // IAIAgent interface: evaluate
+    async evaluate(state: TreasuryState, marketData: MarketData): Promise<TradeRecommendation> {
+        return this.evaluateTrade(state, marketData);
+    }
+
+    // IAIAgent interface: execute
+    async execute(recommendation: TradeRecommendation): Promise<string> {
+        if (!this.vaultAddress || !this.policyAddress) {
+            throw new Error("Vault address and policy address must be configured on the agent to execute.");
+        }
+        return this.proposeTrade(this.vaultAddress, this.policyAddress, recommendation);
     }
 
     // 1. Query current Treasury state from the contract
@@ -85,21 +98,11 @@ export class AIOwnerAgent {
         };
     }
 
-    // 2. Consult 0G Compute Network LLM for Trade Recommendation
+    // 2. Consult LLM Provider or 0G Compute Network for Trade Recommendation
     async evaluateTrade(
         state: TreasuryState,
         marketData: MarketData
     ): Promise<TradeRecommendation> {
-        if (!this.zeroGComputeApiKey || !this.zeroGComputeBaseUrl) {
-            return {
-                recommendTrade: false,
-                tokenIn: "",
-                tokenOut: "",
-                amountIn: "0",
-                rationale: "0G Compute Client not initialized."
-            };
-        }
-
         const prompt = `
 You are the AI Operator for a Tokenized Smart Treasury.
 Current Treasury Balances:
@@ -118,6 +121,30 @@ Respond ONLY with a valid JSON object matching this schema:
   "rationale": "string explanation"
 }
 `;
+
+        if (this.llmProvider) {
+            try {
+                const result = await this.llmProvider.requestInference(prompt);
+                const content = result.textResponse;
+                const match = content.match(/\{[\s\S]*\}/);
+                if (match) {
+                    return JSON.parse(match[0]) as TradeRecommendation;
+                }
+                throw new Error("Invalid response format from LLM Provider");
+            } catch (error) {
+                console.error("LLM Provider inference failed, falling back:", error);
+            }
+        }
+
+        if (!this.zeroGComputeApiKey || !this.zeroGComputeBaseUrl) {
+            return {
+                recommendTrade: false,
+                tokenIn: "",
+                tokenOut: "",
+                amountIn: "0",
+                rationale: "LLM Provider and 0G Compute Client not initialized."
+            };
+        }
 
         try {
             const response = await fetch(`${this.zeroGComputeBaseUrl}/chat/completions`, {
@@ -147,7 +174,7 @@ Respond ONLY with a valid JSON object matching this schema:
             }
             throw new Error("Invalid response format from 0G Compute LLM");
         } catch (error) {
-            console.error("0G Compute inference failed, using fallback logic:", error);
+            console.error("0G Compute inference failed:", error);
             return {
                 recommendTrade: false,
                 tokenIn: "",
@@ -188,45 +215,45 @@ Respond ONLY with a valid JSON object matching this schema:
         return { passed: true, reason: "All risk checks passed successfully." };
     }
 
-    // 4. Submit Proposal On-Chain via Circle API (Fire and Sleep)
+    // 4. Submit Proposal On-Chain (supports both EOA and Circle SDK)
     async proposeTrade(
         vaultAddress: string,
         policyAddress: string,
         trade: TradeRecommendation
     ): Promise<string> {
-        const vaultAbi = [
-            "function proposalOpen(uint256 amount, address policy, address receiver, bool select, bool tOrF, address token) external returns (uint256)"
-        ];
-        
-        const iface = new ethers.Interface(vaultAbi);
         const amountWei = ethers.parseUnits(trade.amountIn, 18);
-        
-        // We will pass the vault address as the receiver since the agent doesn't have a local ethers.Wallet address anymore
-        const receiver = vaultAddress; 
 
-        // 1. Encode the contract call
-        const calldata = iface.encodeFunctionData("proposalOpen", [
-            amountWei,
-            policyAddress,
-            receiver,
-            true,
-            false,
-            trade.tokenIn
-        ]);
+        if (this.agentWallet) {
+            // EOA Direct Transaction Flow (for testing)
+            const vaultAbi = [
+                "function proposalOpen(uint256 amount, address receiver, address owner, uint8 request, address token) external returns (uint256)"
+            ];
+            const vault = new ethers.Contract(vaultAddress, vaultAbi, this.agentWallet);
+            const tx = await vault.proposalOpen(
+                amountWei,
+                policyAddress,
+                this.agentWallet.address,
+                0, // ProposalType.TXNS
+                trade.tokenIn
+            );
+            const receipt = await tx.wait();
+            return receipt.hash;
+        }
+
+        if (!this.circleClient || !this.walletId) {
+            throw new Error("Circle wallet client or wallet ID not configured.");
+        }
 
         console.log("Submitting transaction via Circle Developer-Controlled Wallets API...");
-        
-        // 2. Broadcast via Circle SDK
         const response = await this.circleClient.createContractExecutionTransaction({
             walletId: this.walletId,
             contractAddress: vaultAddress,
-            abiFunctionSignature: "proposalOpen(uint256,address,address,bool,bool,address)",
+            abiFunctionSignature: "proposalOpen(uint256,address,address,uint8,address)",
             abiParameters: [
                 amountWei.toString(),
                 policyAddress,
-                receiver,
-                "true",
-                "false",
+                vaultAddress,
+                "0", // ProposalType.TXNS
                 trade.tokenIn
             ],
             feeLevel: "MEDIUM"
@@ -235,9 +262,6 @@ Respond ONLY with a valid JSON object matching this schema:
         const txId = response.data?.id || "unknown";
         console.log(`Transaction submitted! Circle Tx ID: ${txId}. Going to sleep.`);
         console.log(`Waiting for Webhook ping at /webhooks/circle to resume execution.`);
-        
-        // 3. Fire and Sleep (return txId immediately without awaiting blockchain confirmation)
         return txId;
     }
 }
-

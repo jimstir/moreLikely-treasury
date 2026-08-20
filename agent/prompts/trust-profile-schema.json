@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "auditInsights": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "metricId": {
+            "type": "string",
+            "description": "The unique identifier of the flagged metric (e.g., 'UNAPPROVED_TOKENS')"
+          },
+          "originalRiskLevel": {
+            "type": "string",
+            "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+          },
+          "assessedRiskLevel": {
+            "type": "string",
+            "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
+            "description": "The AI's adjusted risk level based on contextual events."
+          },
+          "shortRationale": {
+            "type": "string",
+            "description": "A concise explanation (1-2 sentences) of why the risk level was adjusted or maintained."
+          },
+          "requiresAttention": {
+            "type": "boolean",
+            "description": "True if the user/owner needs to take immediate action."
+          }
+        },
+        "required": ["metricId", "originalRiskLevel", "assessedRiskLevel", "shortRationale", "requiresAttention"]
+      }
+    },
+    "lastAudited": {
+      "type": "number",
+      "description": "Unix timestamp of the audit."
+    }
+  },
+  "required": ["auditInsights", "lastAudited"]
+}

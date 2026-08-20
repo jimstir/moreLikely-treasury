@@ -1,6 +1,6 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import { AIOwnerAgent } from "../src/agent/aiAgent";
+import { AIOwnerAgent } from "../../agent/aiAgent";
 
 describe("Live 0G Compute Network Test Suite", function () {
     let mockUsdc: any;

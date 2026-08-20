@@ -6,35 +6,63 @@ category: Standards Track
 contributors: jimstir
 ---
 
-## Abstract
+## Overview
 
-This specification describes the AI governor mechanism designed to operate as the owner of an [Open Treasury](./open-treasury.md).
-The AI Governor introduces a LLM-driven system that is authroized to handle all tasks required by the owner of an treasury,
-while remaining transparent and
-auditable by all stakeholders of the treasury.
+This specification describes the AI governor mechanism designed to automate governance, risk monitoring, and operational actions for a [Smart Treasury](../smart contracts/treasury-arch.md). The AI Governor introduces an LLM-driven system that is authorized to handle complex tasks for owners, shareholders, and operators, while remaining transparent and auditable.
 
 ## Background
 
-While the Open Treasury standard provides a transparent, secure, and
-democratic foundation for managing blockchain assets.
-Traditional treasuries are inherently static, 
-requiring human shareholders or owners to constantly monitor markets,
-draft proposals, and manually execute trades. 
-The AI Governor aims to bridge this gap by introducing an autonomous AI agent
-(the "Governor").
-This agent acts as the owner role on the open treasury.
-To ensure the AI cannot go rogue or drain funds,
-the architecture relies on strict interface boundaries,
-and stakeholder-approved policies.
-The goal is to maximize treasury growth through active AI management,
-without sacrificing the transparent nature of the [Open Treasury](./open-treasury.md).
+While the Open Treasury standard provides a transparent, secure, and democratic foundation for managing blockchain assets, traditional treasuries are static. They require human shareholders or owners to constantly monitor markets, draft proposals, and manually execute trades. 
 
-## Specification
+The AI Governor bridges this gap by introducing autonomous AI agents. Depending on the configuration and use case, this agent acts as the Treasury Owner, a Shareholder risk auditor, or an external arbitrage Operator. To ensure the AI cannot go rogue or drain funds, the architecture relies on strict interface boundaries, on-chain gas escrows, and stakeholder-approved policies.
 
-The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD",
-"SHOULD NOT", "RECOMMENDED",  "MAY", and
-"OPTIONAL" in this document are to be interpreted as described in
-[RFC 2119](http://tools.ietf.org/html/rfc2119).
+---
+
+## AI Governor Use Cases
+
+The AI Governor mechanism is integrated directly into the core treasury concepts and supports three distinct functional use cases within the platform:
+
+1. **Treasury Owner Agent (Owner Automation):**
+   * **Description:** Deployed by the Treasury Owner to automate the daily administrative and risk-management tasks of running a vault.
+   * **List of Tasks (Prompt Evaluation):** The agent evaluates market conditions against a dedicated system prompt (`agent/prompts/owner-agent-prompt.txt`) to execute structured JSON decisions:
+     * *Portfolio Rebalancing:* Monitors asset deviation and triggers `swapBack()` on the `AssetSwapPolicy` if allocations drift beyond target limits.
+     * *Default Protection (Liquidation):* Continuously monitors the health factors of active loans in the `LendingPolicy`. If a loan defaults, it instantly triggers `seizeCollateral()` to protect the treasury's principal.
+     * *Proposal Generation:* Detects high-yield opportunities and automatically drafts EIP-712 formatted proposals for shareholders to vote on.
+   * **Deployment & Authorization Process:** After the human owner provisions the treasury and creates the agent's Circle Smart Wallet, the platform backend provides the agent's public EOA address. The human owner MUST then submit an on-chain transaction calling `addAuth(agentWalletAddress)` on the `TreasuryVault`. This officially delegates execution rights to the AI, allowing it to bypass human delays for critical operations while still being bound by the vault's core security constraints.
+2. **Shareholder/User Agent (Trust & Voting Helper):**
+   * **Description:** Tasked by a current or future stakeholder to continuously monitor the treasury's **Trust Profile**.
+   * **Dashboard Integration:** The Trust Profile operates as a dedicated module. When managed by the Shareholder Agent, its computed security scores, flags, and warnings are compiled and displayed in a dedicated widget inside the Treasury's independent details dashboard (can also be manually operated by the user).
+   * **Governance Automation:** Analyzes incoming proposals against the user's custom risk limits and recommends or automatically signs and submits votes on their behalf.
+3. **Operator Agent (Arbitrage & Liquidator):**
+   * **Description:** Deployed by external searchers/arbitrageurs to generate profits from liquidation bonuses.
+   * **Platform Integration:** Monitors the platform-wide **Global Liquidation Dashboard** (which indexes all isolated lending policies) to spot default events and execute on-chain liquidations instantly.
+
+---
+
+## Deployment Methods
+
+The platform supports deploying and running AI Governors through three distinct execution configurations. Each deployment type has a dedicated configuration and settings panel in the UI:
+
+1. **0G Compute Network (Decentralized):**
+   * **Configuration:** The agent runs on the decentralized 0G Compute network.
+   * **On-Chain Payments:** Operates direct on-chain billing on the ZG blockchain using ZG tokens.
+   * **Transcripts & Auditability:** Persists decision reports and conversation history directly to the ZG Storage layer (incurring ZG token storage fees).
+   * **UI Settings Panel:** Provides a dedicated dashboard where the user can view their ZG token balances, configure ZG Storage nodes, and review verifiable inference receipts.
+2. **Platform Gemini LLM (Managed/Centralized):**
+   * **Configuration:** The platform runs a managed instance of Google's Gemini LLM.
+   * **On-Chain Subscription Check:** To prevent abuse and enforce invocation limits, the platform's backend checks the user's subscription status by querying an on-chain **Subscription Smart Contract**.
+   * **Environment Setup:** The address of the on-chain Subscription Smart Contract must be defined in the backend configuration via the `.env` file (`SUBSCRIPTION_CONTRACT_ADDRESS=0x...`).
+   * **UI Settings Panel:** Displays the user's active subscription tier, monthly invocation caps, and active task configurations.
+3. **Private/Self-Hosted Deployment:**
+   * **Configuration:** The user hosts the agent runner locally or on their own cloud infrastructure (e.g., a Node.js runner).
+   * **Metadata Registry:** To maintain auditability for shareholders, the user registers their agent metadata with the platform (stored **for free in the platform database**):
+     * `statusCheckUrl`: The endpoint for the platform to query the agent's live heartbeat.
+     * `receiptWebhookUrl`: The endpoint where the agent publishes decision transcripts (conforming to a standard schema copied from the 0G Network's receipt structure).
+   * **UI Settings Panel:** Allows the user to input and update their private endpoints, API keys, and callback webhooks.
+
+---
+
+## Core Specification
 
 Each AI Governor implementation MUST consist of two distinct layers: an **Off-chain Decision Loop** (the orchestrator) and an **On-chain Security Layer** (the gas escrow and policy contracts).
 
@@ -70,6 +98,8 @@ Instead, the AI Governor SHOULD utilize a Decentralized Ledger pattern (e.g., vi
 ### The Policy Interaction
 
 The AI Governor generates the necessary calldata (e.g., Uniswap routing data) and submits it to the policy. The policy contract MUST enforce that the tokens transferred out of the treasury are securely swapped and that the resulting assets are deposited back into the tokenized reserve, matching the parameters of the original AI proposal.
+
+To enforce a unified permission structure, policy contracts DO NOT maintain local owner variables. Instead, they dynamically query the `TreasuryVault` (via the `auth` modifier) to verify if the caller is the `tOwner()` or an authorized executor via `getAuth()`. This allows the owner to delegate or revoke the AI Governor's execution privileges centrally on the Vault, which instantly propagates to all active policies.
 
 ### Policy-Specific Responsibilities
 
@@ -116,14 +146,176 @@ Lending protocols require constant vigilance to maximize yield and prevent liqui
 
 #### 5. Lending Policy: Automated Liquidation Flow (Fallback Path)
 Lending policies require immediate repossession and conversion of collateral during a borrower default to protect the treasury from market risk.
-- **AI Governor Responsibility:** The Agent continuously monitors active loans in the `LendingPolicy` contract. If a loan defaults (due to LTV breach or time expiry), the Agent automatically executes the fallback path. It calls `seizeCollateral(borrower)` on the lending contract, repossessing the collateral (e.g. WETH) to the `TreasuryVault`. It then scans historical proposals to locate the registered `AssetSwapPolicy` contract, transfers the WETH to the swap policy, and triggers `executeSwap()` to sell it for the vault's base asset (e.g. USDC). The swap policy then calls `depositTreasury(..., true, proposalId)`, automatically updating the vault ledger and closing the loop.
+- **AI Governor Responsibility:** The Agent continuously monitors active loans in the `LendingPolicy` contract. If a loan defaults (due to LTV breach or time expiry), the Agent automatically executes the fallback path. It calls `seizeCollateral(borrower)` on the lending contract, repossessing the collateral (e.g. WETH) to the `TreasuryVault`. It then scans historical proposals to locate the registered `AssetSwapPolicy` contract, drafts and approves a proposal to transfer the WETH to the swap policy, and triggers `executeSwap()` to sell it for the vault's base asset (e.g. USDC). The swap policy then calls `depositTreasury(..., true, proposalId)`, automatically updating the vault ledger and closing the loop.
 - **Human Owner Responsibility (Non-AI):** The human owner must manually track loan health, call `seizeCollateral()`, locate the swap policy, draft a swap proposal, and manually execute the trade—exposing the treasury to severe price drop risks during the delay.
 - **Execution Schema:**
   1. **AI Agent:** Monitors loan health and detects a default.
   2. **AI Agent:** Calls `seizeCollateral(borrower)` on the Lending Policy contract.
-  3. **AI Agent:** Transfers seized collateral from the Vault to the `AssetSwapPolicy` contract.
+  3. **AI Agent:** Opens and executes a proposal to transfer seized collateral from the Vault to the `AssetSwapPolicy` contract.
   4. **AI Agent:** Calls `executeSwap()` on the `AssetSwapPolicy` to trade collateral back to the base asset.
   5. **AssetSwapPolicy:** Executes Uniswap trade and returns base assets via `depositTreasury()` to settle the ledger.
+
+---
+
+## Smart Wallet & Circle Integration Flows
+
+To prevent key theft and protect user assets from on-chain execution abuse (such as rogue AI behavior or compromised backend servers), the AI Governor architecture enforces a strict boundary between **Key Custody** (Circle Developer-Controlled Wallet) and **On-Chain Governance/Rate-Limiting** (Contract Wallet / Gas Escrow).
+
+### Core Components:
+1. **The Signer (Circle EOA):** The signing wallet address managed in Circle's secure hardware modules. It has zero initial ETH gas and cannot make arbitrary transfers.
+2. **The Guardrail (AgentGasEscrow Contract):** Holds the owner's ETH gas budget on-chain. It enforces time-locked rate limits and verifies proposal states on the `TreasuryVault` before releasing gas.
+
+### Transaction Flow per Deployment Configuration:
+
+#### 1. 0G Compute Network (Decentralized Agent)
+The agent runs on a public decentralized node. Circle API credentials are never stored on the node.
+1. The 0G Compute AI Agent completes its reasoning loop and determines an action (e.g. `proposalOpen`).
+2. The agent sends a secure HTTP POST request containing the trade parameters and ZG receipt to the **Platform Backend Relayer** (`/api/governor/execute-trade`).
+3. The platform backend verifies the ZG receipt, validates the request against risk limits, and uses its secure credentials to trigger the Circle API.
+4. Circle commands the **Signer EOA** to request gas from the `AgentGasEscrow` contract.
+5. The `AgentGasEscrow` contract checks the daily allowance limit on-chain. If valid, it transfers the gas (ETH) to the **Signer EOA**.
+6. The **Signer EOA** immediately executes the transaction (`proposalOpen`) on the `TreasuryVault` on Sepolia and the remaining gas is spent.
+
+#### 2. Platform Gemini LLM (Managed Agent)
+The platform backend manages both the LLM execution and the Circle wallet triggers.
+1. The platform-managed Gemini model decides to execute a trade.
+2. The platform backend queries the on-chain **Subscription Smart Contract** to verify the user has not exceeded their invocation limits.
+3. The backend calls the Circle API to sign the transaction.
+4. Circle commands the **Signer EOA** to call the `AgentGasEscrow` contract for gas.
+5. The `AgentGasEscrow` releases the gas to the **Signer EOA** after validating on-chain rate limits.
+6. The **Signer EOA** executes the transaction on the `TreasuryVault` on Sepolia.
+
+#### 3. Private/Self-Hosted Agent
+The user hosts their own agent runner locally. The platform backend is completely bypassed for signing and execution.
+1. The user's self-hosted runner decides to execute a trade.
+2. The runner, configured locally with the user's private Circle developer credentials, directly calls the Circle API from its private server.
+3. Circle commands the user's private **Signer EOA** to call the `AgentGasEscrow` contract to retrieve gas.
+4. The `AgentGasEscrow` validates the on-chain rate limits and transfers gas to the EOA.
+5. The private **Signer EOA** signs and executes the transaction on the `TreasuryVault` on Sepolia.
+
+### Technical Implementation Details (Circle SDK)
+
+To integrate Circle's multi-tenant Developer-Controlled Wallets into the platform backend, developers must implement the following operations:
+
+#### 1. Provisioning a User Agent Wallet
+When a user deploys an AI Governor, the backend initializes the `@circle-fin/developer-controlled-wallets` client and provisions a unique Smart Contract Account (SCA) for that user:
+```typescript
+import { initiateDeveloperControlledWalletsClient } from "@circle-fin/developer-controlled-wallets";
+import { v4 as uuidv4 } from "uuid";
+
+const circleClient = initiateDeveloperControlledWalletsClient({
+    apiKey: process.env.CIRCLE_API_KEY!,
+    entitySecret: process.env.CIRCLE_ENTITY_SECRET!,
+});
+
+async function provisionAgentWallet(): Promise<{ walletId: string; address: string }> {
+    const response = await circleClient.createWallet({
+        idempotencyKey: uuidv4(),
+        accountType: "SCA", // Smart Contract Account (ERC-4337 Compliant)
+        chain: "ETH-SEPOLIA" // Target network
+    });
+
+    const walletId = response.data?.wallet?.id;
+    const address = response.data?.wallet?.address;
+
+    if (!walletId || !address) {
+        throw new Error("Circle wallet provisioning failed");
+    }
+
+    return { walletId, address };
+}
+```
+
+#### 2. Database Mapping (Multi-Tenant Separation)
+The platform maps the generated `walletId` (a unique Circle UUID) directly to the user's database record. The platform does not store private keys, only the `walletId` reference:
+```prisma
+model UserAgent {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  treasuryId     String
+  circleWalletId String   // e.g., "550e8400-e29b-41d4-a716-446655440000"
+  walletAddress  String   // EOA address used on Sepolia
+  status         String   @default("active")
+}
+```
+
+#### 3. Executing a Transaction
+To perform an on-chain action (e.g., executing a swap proposal), the backend relays the transaction parameters to Circle using the user's `circleWalletId`:
+```typescript
+async function executeAgentTransaction(
+    circleWalletId: string,
+    contractAddress: string,
+    functionSignature: string,
+    parameters: string[]
+): Promise<string> {
+    const response = await circleClient.createContractExecutionTransaction({
+        walletId: circleWalletId,
+        contractAddress: contractAddress,
+        abiFunctionSignature: functionSignature,
+        abiParameters: parameters,
+        feeLevel: "MEDIUM"
+    });
+
+    const transactionId = response.data?.id;
+    if (!transactionId) {
+        throw new Error("Circle contract execution submission failed");
+    }
+
+    return transactionId; // Returns Circle Tx ID immediately (Fire & Sleep)
+}
+```
+
+### Developer Implementation Specifications
+
+To build a modular, testable, and secure system, developers MUST implement the following TypeScript interfaces and cryptographic verification methods:
+
+#### 1. Use-Case Interface (`IAIAgent.ts`)
+Each AI Governor use case (Owner, Shareholder, Operator) must implement the following base contract:
+```typescript
+export interface IAIAgent {
+    monitorState(vaultAddress: string): Promise<any>;
+    evaluate(state: any, marketData: any): Promise<TradeRecommendation>;
+    execute(recommendation: TradeRecommendation): Promise<string>;
+}
+```
+
+#### 2. LLM Provider Adapter Interface (`ILLMProvider.ts`)
+Each execution engine (0G Compute, Platform Gemini, Private Host) must implement a pluggable adapter to handle requests and return standardized inference receipts:
+```typescript
+export interface InferenceResult {
+    textResponse: string;
+    toolCalls?: Array<{
+        toolName: string;
+        parameters: Record<string, any>;
+    }>;
+    receiptSignature?: string; // Verification proof for ZG/Private receipts
+}
+
+export interface ILLMProvider {
+    requestInference(prompt: string): Promise<InferenceResult>;
+    getBillingStatus?(): Promise<{ balance: string; unit: string }>;
+}
+```
+
+#### 3. Cryptographic Receipt Verification for Private Agents
+To prevent malicious private agent hosts from spoofing execution logs and transcripts in the platform database, the platform enforces strict signature checks:
+
+* **Registration:** During the deployment phase, a self-hosted agent registers its configuration along with its authorized **Agent EOA address**.
+* **Signature Webhook Payload:** When the private agent submits its decision receipts to the platform backend via the `/api/governor/private-receipt` endpoint, the payload must include a cryptographic signature of the receipt content:
+  ```json
+  {
+    "receipt": {
+      "timestamp": 1787123900,
+      "decision": "propose_swap",
+      "rationale": "WETH price fell below the stop-loss limit of $3,100.",
+      "txHash": "0xabc123..."
+    },
+    "signature": "0xPrivateSignatureString..."
+  }
+  ```
+* **On-Chain/Off-Chain Verification:** The platform backend recovers the signer from the signature using `ethers.verifyMessage()` and verifies it matches the registered **Agent EOA address** before publishing the receipt to the dashboard or updating the treasury's trust profile score.
+
+---
 
 ## Copyright
 
@@ -131,4 +323,4 @@ Copyright and related rights waived via [CC0](https://creativecommons.org/public
 
 ## References
 
-- [Open Treasury Standard](./open-treasury.md)
+- [Smart Treasury Architecture](../smart contracts/treasury-arch.md)

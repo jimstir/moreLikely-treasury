@@ -26,11 +26,13 @@ describe("Live Uniswap Sepolia Fork Test Suite", function () {
         treasuryToken = await TreasuryToken.deploy("Treasury Shares", "TRES", ownerAddress);
         await treasuryToken.waitForDeployment();
 
-        // Deploy TreasuryVault
+        const USDC_ADDRESS = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238";
         const TreasuryVault = await ethers.getContractFactory("TreasuryVault");
         treasuryVault = await TreasuryVault.deploy(
             "moreLikely Treasury",
             await treasuryToken.getAddress(),
+            USDC_ADDRESS,
+            100,
             "Vault Shares",
             "VSHARE"
         );
@@ -55,13 +57,21 @@ describe("Live Uniswap Sepolia Fork Test Suite", function () {
         const livePolicy = await AssetSwapPolicy.deploy(
             await treasuryVault.getAddress(),
             UNIVERSAL_ROUTER,
-            aiAgentAddress,
-            ownerAddress
+            aiAgentAddress
         );
         await livePolicy.waitForDeployment();
 
         // Approve live Sepolia WETH in our vault
-        await (await treasuryVault.newToken(WETH_ADDRESS)).wait();
+        const addTokenTx = await treasuryVault.proposalOpen(
+            0,
+            ethers.ZeroAddress,
+            ownerAddress,
+            1, // ADD_TOKEN
+            WETH_ADDRESS
+        );
+        await addTokenTx.wait();
+        const pId = await treasuryVault.proposalNum();
+        await (await treasuryVault.newToken(WETH_ADDRESS, pId)).wait();
 
         // Stakeholder wraps native ETH to WETH
         const wethContract: any = await ethers.getContractAt(

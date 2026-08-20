@@ -1,0 +1,248 @@
+/* ─── TrustProfileWidget ─────────────────────────────────────────────────────── */
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* Header row: score ring + title */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+/* SVG ring gauge */
+.ringWrap {
+  position: relative;
+  width: 110px;
+  height: 110px;
+  flex-shrink: 0;
+}
+.ringWrap svg {
+  transform: rotate(-90deg);
+}
+.ringLabel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.ringScore {
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--foreground, #fff);
+}
+.ringCaption {
+  font-size: 10px;
+  color: var(--foreground-muted, #aaa);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Title block */
+.titleBlock {
+  flex: 1;
+}
+.titleBlock h2 {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 700;
+}
+.titleBlock p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--foreground-muted, #aaa);
+}
+
+/* CTA when no profile exists */
+.ctaCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 40px;
+  text-align: center;
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+.ctaIcon {
+  font-size: 48px;
+}
+.ctaCard h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+.ctaCard p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--foreground-muted, #aaa);
+  max-width: 380px;
+}
+
+/* Attribute list */
+.attributeList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.attributeRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  transition: background 0.15s;
+}
+.attributeRow:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.attrIndex {
+  font-size: 11px;
+  font-weight: 700;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--foreground, #fff);
+}
+
+.attrBody {
+  flex: 1;
+  min-width: 0;
+}
+.attrTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.attrTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--foreground, #fff);
+}
+.attrDetail {
+  font-size: 12px;
+  color: var(--foreground-muted, #aaa);
+  line-height: 1.5;
+}
+.attrRaw {
+  font-size: 11px;
+  color: var(--foreground-muted, #888);
+  margin-top: 4px;
+  font-family: monospace;
+}
+
+/* Severity badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.safe {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+.warning {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+.critical {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+/* Score bar */
+.attrScoreBar {
+  width: 48px;
+  min-width: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.attrScoreNum {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--foreground, #fff);
+}
+.attrScoreTrack {
+  width: 4px;
+  height: 48px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+}
+.attrScoreFill {
+  width: 100%;
+  border-radius: 4px;
+  transition: height 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Computing state */
+.computing {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 20px;
+  font-size: 14px;
+  color: var(--foreground-muted, #aaa);
+}
+
+/* Footer */
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+.footerNote {
+  font-size: 11px;
+  color: var(--foreground-muted, #888);
+}
+
+/* Spinner */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255,255,255,0.15);
+  border-top-color: #a78bfa;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}

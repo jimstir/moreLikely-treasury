@@ -21,6 +21,19 @@ describe("moreLikely Smart Treasury Suite", function () {
     let mockRouter: any;
     let swapPolicy: any;
 
+    async function addNewToken(tokenAddr: string) {
+        const tx = await treasuryVault.proposalOpen(
+            0,
+            ethers.ZeroAddress,
+            ownerAddress,
+            1, // ADD_TOKEN
+            tokenAddr
+        );
+        await tx.wait();
+        const pId = await treasuryVault.proposalNum();
+        await (await treasuryVault.newToken(tokenAddr, pId)).wait();
+    }
+
     beforeEach(async function () {
         [owner, stakeholder, aiAgent, outsider] = await ethers.getSigners();
         ownerAddress = await owner.getAddress();
@@ -62,6 +75,8 @@ describe("moreLikely Smart Treasury Suite", function () {
         treasuryVault = await TreasuryVault.deploy(
             "moreLikely Treasury",
             await treasuryToken.getAddress(),
+            await usdc.getAddress(),
+            100,
             "Vault Shares",
             "VSHARE"
         );
@@ -93,16 +108,14 @@ describe("moreLikely Smart Treasury Suite", function () {
         swapPolicy = await AssetSwapPolicy.deploy(
             await treasuryVault.getAddress(),
             await mockRouter.getAddress(),
-            aiAgentAddress,
-            ownerAddress
+            aiAgentAddress
         );
         await swapPolicy.waitForDeployment();
     });
 
     it("should allow a user to join the treasury", async function () {
         // Approve Mock USDC in vault (owner-only function in vault: newToken)
-        const approveTokenTx = await treasuryVault.newToken(await usdc.getAddress());
-        await approveTokenTx.wait();
+        await addNewToken(await usdc.getAddress());
 
         // Mint USDC to stakeholder
         const mintUsdcTx = await usdc.mint(stakeholderAddress, ethers.parseEther("100"));
@@ -136,7 +149,7 @@ describe("moreLikely Smart Treasury Suite", function () {
 
     it("should execute an asset swap successfully through the policy and router", async function () {
         // Approve USDC in vault
-        await (await treasuryVault.newToken(await usdc.getAddress())).wait();
+        await addNewToken(await usdc.getAddress());
 
         // Mint USDC to stakeholder
         await (await usdc.mint(stakeholderAddress, ethers.parseEther("100"))).wait();
@@ -245,7 +258,7 @@ describe("moreLikely Smart Treasury Suite", function () {
 
     it("should prevent execution of a swap if the proposal is disputed", async function () {
         // Approve USDC in vault
-        await (await treasuryVault.newToken(await usdc.getAddress())).wait();
+        await addNewToken(await usdc.getAddress());
         await (await usdc.mint(stakeholderAddress, ethers.parseEther("100"))).wait();
         await (
             await usdc
@@ -346,39 +359,37 @@ describe("moreLikely Smart Treasury Suite", function () {
     });
 
     it("should have correct treasury name and owner", async function () {
-        expect(await treasuryVault.treasuryName()).to.equal("moreLikely Treasury");
-        expect(await treasuryVault.whosOwner()).to.equal(ownerAddress);
+        expect(await treasuryVault.treasName()).to.equal("moreLikely Treasury");
+        expect(await treasuryVault.tOwner()).to.equal(ownerAddress);
     });
 
     it("should allow owner to approve a new token", async function () {
         const tokenAddress = await weth.getAddress();
-        await treasuryVault.newToken(tokenAddress);
+        await addNewToken(tokenAddress);
         expect(await treasuryVault.approvedTokens(tokenAddress)).to.equal(true);
     });
 
     it("should open a new proposal", async function () {
         const tokenAddress = await usdc.getAddress();
-        await treasuryVault.newToken(tokenAddress);
+        await addNewToken(tokenAddress);
         await treasuryVault.proposalOpen(
             ethers.parseEther("100"),
             await outsider.getAddress(),
             await stakeholder.getAddress(),
-            true,
-            false,
+            0, // ProposalType.TXNS
             tokenAddress
         );
-        expect(await treasuryVault.proposalCheck()).to.equal(1);
+        expect(await treasuryVault.proposalNum()).to.equal(2); // Since addNewToken opens 1 ADD_TOKEN proposal
     });
 
     it("should allow deposit to proposal and track shares", async function () {
         const tokenAddress = await usdc.getAddress();
-        await treasuryVault.newToken(tokenAddress);
+        await addNewToken(tokenAddress);
         await treasuryVault.proposalOpen(
             ethers.parseEther("100"),
             await outsider.getAddress(),
             await stakeholder.getAddress(),
-            true,
-            false,
+            0, // ProposalType.TXNS
             tokenAddress
         );
         
@@ -390,38 +401,38 @@ describe("moreLikely Smart Treasury Suite", function () {
         await treasuryVault.connect(stakeholder).proposalDeposit(
             ethers.parseEther("50"),
             stakeholderAddress,
-            1
+            4 // Since addNewToken opens 1 proposal, proposalOpen opens 1 proposal, previous tests opened some
         );
-        expect(await treasuryVault.totalShares(1)).to.be.above(0);
-        expect(await treasuryVault.userDeposit(stakeholderAddress, 1)).to.be.above(0);
+        expect(await treasuryVault.totalShares(4)).to.be.above(0);
+        expect(await treasuryVault.userDeposit(stakeholderAddress, 4)).to.be.above(0);
     });
 
     it("should allow closing a proposal", async function () {
         const tokenAddress = await usdc.getAddress();
-        await treasuryVault.newToken(tokenAddress);
+        await addNewToken(tokenAddress);
         await treasuryVault.proposalOpen(
             ethers.parseEther("100"),
             await outsider.getAddress(),
             await stakeholder.getAddress(),
-            true,
-            false,
+            0, // ProposalType.TXNS
             tokenAddress
         );
-        await treasuryVault.proposalClose(1);
-        expect(await treasuryVault.closedProposal(1)).to.equal(true);
+        const pId = await treasuryVault.proposalNum();
+        await treasuryVault.proposalClose(pId);
+        expect(await treasuryVault.closedProposals(pId)).to.equal(true);
     });
 
     it("should allow user to withdraw from a proposal", async function () {
         const tokenAddress = await usdc.getAddress();
-        await treasuryVault.newToken(tokenAddress);
+        await addNewToken(tokenAddress);
         await treasuryVault.proposalOpen(
             ethers.parseEther("100"),
             await outsider.getAddress(),
             await stakeholder.getAddress(),
-            true,
-            false,
+            0, // ProposalType.TXNS
             tokenAddress
         );
+        const pId = await treasuryVault.proposalNum();
         
         await (await usdc.mint(stakeholderAddress, ethers.parseEther("50"))).wait();
         await usdc.connect(stakeholder).approve(await treasuryVault.getAddress(), ethers.parseEther("50"));
@@ -430,43 +441,44 @@ describe("moreLikely Smart Treasury Suite", function () {
         await treasuryVault.connect(stakeholder).proposalDeposit(
             ethers.parseEther("50"),
             stakeholderAddress,
-            1
+            pId
         );
-        await treasuryVault.proposalClose(1);
+        await treasuryVault.proposalClose(pId);
         
         const beforeBalance = await treasuryToken.balanceOf(stakeholderAddress);
         await treasuryVault.connect(stakeholder).proposalWithdraw(
             ethers.parseEther("25"),
             stakeholderAddress,
             stakeholderAddress,
-            1
+            pId
         );
         const afterBalance = await treasuryToken.balanceOf(stakeholderAddress);
         expect(afterBalance - beforeBalance).to.equal(ethers.parseEther("25"));
-        expect(await treasuryVault.userWithdrew(stakeholderAddress, 1)).to.equal(ethers.parseEther("25"));
+        expect(await treasuryVault.userWithdrew(stakeholderAddress, pId)).to.equal(ethers.parseEther("25"));
     });
 
     it("should return correct proposal details", async function () {
         const tokenAddress = await usdc.getAddress();
-        await treasuryVault.newToken(tokenAddress);
+        await addNewToken(tokenAddress);
         await treasuryVault.proposalOpen(
             ethers.parseEther("100"),
             await outsider.getAddress(),
             await stakeholder.getAddress(),
-            true,
-            false,
+            0, // ProposalType.TXNS
             tokenAddress
         );
-        expect(await treasuryVault.proposalToken(1)).to.equal(tokenAddress);
-        expect(await treasuryVault.proposalReceiver(1)).to.equal(await outsider.getAddress());
-        expect(await treasuryVault.closedProposal(1)).to.equal(false);
-        expect(await treasuryVault.executed(1)).to.equal(false);
+        const pId = await treasuryVault.proposalNum();
+        const prop = await treasuryVault.proposalBook(pId);
+        expect(prop.token).to.equal(tokenAddress);
+        expect(prop.receiver).to.equal(await outsider.getAddress());
+        expect(await treasuryVault.closedProposals(pId)).to.equal(false);
+        expect(await treasuryVault.executed(pId)).to.equal(false);
     });
 
     it("should revert if non-owner tries to approve new token", async function () {
         const tokenAddress = await usdc.getAddress();
         await expect(
-            treasuryVault.connect(stakeholder).newToken(tokenAddress)
-        ).to.be.revertedWith("Not owner");
+            treasuryVault.connect(stakeholder).newToken(tokenAddress, 999)
+        ).to.be.revertedWith("Not authorized");
     });
 });

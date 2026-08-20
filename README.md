@@ -26,6 +26,17 @@ Additionally, if you are running the frontend locally, create a `.env` file in t
 NEXT_PUBLIC_DEPLOY_NETWORK="testnet"
 ```
 
+## Self-Hosting & Private AI Agents
+
+If you are running your own **Private AI Governor** deployment, your agent is responsible for computing the AI Contextual Overlay for the Trust Profile dashboard. 
+
+You can customize the strictness and reasoning capabilities of your private agent by editing the following files:
+1. **System Prompt:** `agent/prompts/trust-profile-prompt.txt`
+2. **Output Schema:** `agent/prompts/trust-profile-schema.json`
+
+As long as your private AI runner returns JSON that perfectly matches the provided schema, the moreLikely platform backend will parse and display your agent's custom rationale on the treasury's frontend dashboard.
+
+
 ## Circle + Stablecoin Integrations
 
 The moreLikely Smart Treasury is integrated with the Circle ecosystem to provide some enterprise-grade security and stablecoin management.

@@ -3,12 +3,11 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import "../interfaces/ITreasuryPolicy.sol";
 import "../interfaces/ITreasuryVault.sol";
 
-contract AssetSwapPolicy is Ownable, ITreasuryPolicy {
+contract AssetSwapPolicy is ITreasuryPolicy {
     using SafeERC20 for IERC20;
 
     event SwapExecuted(
@@ -26,6 +25,7 @@ contract AssetSwapPolicy is Ownable, ITreasuryPolicy {
     address[] public heldTokens;
     mapping(address => bool) public isTokenHeld;
     mapping(address => address) public tokenOracleMarkets;
+    mapping(address => uint256) public tokenProposalIds;
     mapping(uint256 => bool) public executedProposals;
 
     struct SwapBackRecord {
@@ -57,12 +57,20 @@ contract AssetSwapPolicy is Ownable, ITreasuryPolicy {
     uint256 public override status; // 1 = Liquidated, 0 = Active
     uint256 public override proposalNum; // Returns latest proposal ID for interface compliance
 
+    modifier auth() {
+        require(
+            msg.sender == ITreasuryVault(treasuryVault).tOwner() || 
+            ITreasuryVault(treasuryVault).getAuth(msg.sender),
+            "Not authorized by TreasuryVault"
+        );
+        _;
+    }
+
     constructor(
         address _treasuryVault,
         address _universalRouter,
-        address _oracleRouter,
-        address _initialOwner
-    ) Ownable(_initialOwner) {
+        address _oracleRouter
+    ) {
         treasuryVault = _treasuryVault;
         universalRouter = _universalRouter;
         oracleRouter = _oracleRouter;
@@ -100,19 +108,21 @@ contract AssetSwapPolicy is Ownable, ITreasuryPolicy {
             interfaceId == type(IERC165).interfaceId;
     }
 
-    function setUniversalRouter(address _universalRouter) external onlyOwner {
+    function setUniversalRouter(address _universalRouter) external auth {
         universalRouter = _universalRouter;
     }
 
-    function setOracleRouter(address _oracleRouter) external onlyOwner {
+    function setOracleRouter(address _oracleRouter) external auth {
         oracleRouter = _oracleRouter;
     }
 
     function setTokenOracleMarket(
         address token,
-        address market
-    ) external onlyOwner {
+        address market,
+        uint256 proposalId
+    ) external auth {
         tokenOracleMarkets[token] = market;
+        tokenProposalIds[token] = proposalId;
     }
 
     // Execute swap using Uniswap Router.
@@ -123,7 +133,7 @@ contract AssetSwapPolicy is Ownable, ITreasuryPolicy {
         address tokenOut,
         uint256 amountIn,
         bytes calldata swapCallData
-    ) external onlyOwner returns (bool) {
+    ) external auth returns (bool) {
         require(!executedProposals[proposalId], "Proposal already executed");
 
         // Verify balance
@@ -168,7 +178,7 @@ contract AssetSwapPolicy is Ownable, ITreasuryPolicy {
         address tokenOut,
         uint256 amountIn,
         bytes calldata swapCallData
-    ) external onlyOwner returns (uint256 amountOut) {
+    ) external auth returns (uint256 amountOut) {
         require(
             IERC20(tokenIn).balanceOf(address(this)) >= amountIn,
             "Insufficient balance"
@@ -198,7 +208,7 @@ contract AssetSwapPolicy is Ownable, ITreasuryPolicy {
         );
     }
 
-    function exit(address token, uint256 amount) external onlyOwner {
+    function exit(address token, uint256 amount) external auth {
         uint256 balance = IERC20(token).balanceOf(address(this));
         require(balance >= amount, "Insufficient balance");
 
@@ -220,7 +230,7 @@ contract AssetSwapPolicy is Ownable, ITreasuryPolicy {
         );
     }
 
-    function liquidate() external override onlyOwner {
+    function liquidate() external override auth {
         status = 1;
         liquidationHistory.push(
             LiquidationRecord({
@@ -262,7 +272,7 @@ contract AssetSwapPolicy is Ownable, ITreasuryPolicy {
         return total;
     }
 
-    function liquidateToken(address token) external onlyOwner {
+    function liquidateToken(address token) external auth {
         require(status == 1, "Policy not in liquidated state");
         uint256 balance = IERC20(token).balanceOf(address(this));
         require(balance > 0, "No balance to liquidate");

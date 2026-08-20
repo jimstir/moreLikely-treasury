@@ -26,6 +26,8 @@ describe("Treasury deployment and view functions", function () {
     treasuryVault = await TreasuryVault.connect(owner).deploy(
       "moreLikely Treasury",
       await treasuryToken.getAddress(),
+      ownerAddress,
+      100,
       "Vault Shares",
       "VSHARE"
     );
@@ -34,9 +36,9 @@ describe("Treasury deployment and view functions", function () {
     const setVaultTx = await treasuryToken.connect(owner).setVault(await treasuryVault.getAddress());
     await setVaultTx.wait();
 
-    const vaultOwner = await treasuryVault.whosOwner();
-    const vaultTokenAddress = await treasuryVault.treasuryToken();
-    const treasuryName = await treasuryVault.treasuryName();
+    const vaultOwner = await treasuryVault.tOwner();
+    const vaultTokenAddress = await treasuryVault.treasToken();
+    const treasuryName = await treasuryVault.treasName();
     const tokenVaultAddress = await treasuryToken.vault();
 
     expect(vaultOwner).to.equal(ownerAddress);
@@ -50,6 +52,8 @@ describe("Treasury deployment and view functions", function () {
     treasuryVault = await TreasuryVault.connect(owner).deploy(
       "moreLikely Treasury",
       await treasuryToken.getAddress(),
+      ownerAddress,
+      100,
       "Vault Shares",
       "VSHARE"
     );
@@ -59,7 +63,7 @@ describe("Treasury deployment and view functions", function () {
     await setVaultTx.wait();
 
     const connectedOwner = await owner.getAddress();
-    const onChainOwner = await treasuryVault.whosOwner();
+    const onChainOwner = await treasuryVault.tOwner();
 
     expect(onChainOwner.toLowerCase()).to.equal(connectedOwner.toLowerCase());
     expect(onChainOwner).to.equal(ownerAddress);
@@ -70,6 +74,8 @@ describe("Treasury deployment and view functions", function () {
     treasuryVault = await TreasuryVault.connect(owner).deploy(
       "moreLikely Treasury",
       await treasuryToken.getAddress(),
+      ownerAddress,
+      100,
       "Vault Shares",
       "VSHARE"
     );
@@ -78,11 +84,11 @@ describe("Treasury deployment and view functions", function () {
     const setVaultTx = await treasuryToken.connect(owner).setVault(await treasuryVault.getAddress());
     await setVaultTx.wait();
 
-    const vaultOwner = await treasuryVault.whosOwner();
-    const treasuryName = await treasuryVault.treasuryName();
-    const vaultTokenAddress = await treasuryVault.treasuryToken();
+    const vaultOwner = await treasuryVault.tOwner();
+    const treasuryName = await treasuryVault.treasName();
+    const vaultTokenAddress = await treasuryVault.treasToken();
     const tokenVaultAddress = await treasuryToken.vault();
-    const proposalCount = await treasuryVault.proposalCheck();
+    const proposalCount = await treasuryVault.proposalNum();
     const tokenApproved = await treasuryVault.approvedTokens(await treasuryToken.getAddress());
 
     console.log("view: vaultOwner=", vaultOwner);

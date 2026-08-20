@@ -85,18 +85,16 @@ export default function TreasuryStatsWidget({
         const vault = getTreasuryVault(vaultAddress, provider);
         const token = getTreasuryToken(tokenAddress, provider);
 
-        const [name, owner, totalSupply, tokenListLength] = await Promise.all([
-          vault.treasuryName(),
-          vault.WhosOwner(),
+        const [name, owner, totalSupply, activeTokensList] = await Promise.all([
+          vault.treasName(),
+          vault.tOwner(),
           token.totalSupply(),
-          vault.tokenListLength(),
+          vault.tokensL(),
         ]);
 
         // Fetch all approved token balances
         const assets: TreasuryStats["assets"] = [];
-        const count = Number(tokenListLength);
-        for (let i = 0; i < count; i++) {
-          const tokenAddr = await vault.listToken(i);
+        for (const tokenAddr of activeTokensList) {
           const erc20 = getERC20(tokenAddr, provider);
           const [symbol, balance] = await Promise.all([
             erc20.symbol(),

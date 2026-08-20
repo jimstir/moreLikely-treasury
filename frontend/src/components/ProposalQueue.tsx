@@ -35,36 +35,31 @@ export default function ProposalQueue({ vaultAddress }: ProposalQueueProps) {
     const fetchProposals = async () => {
       try {
         const vault = getTreasuryVault(vaultAddress, provider);
-        const countBigInt = await vault.proposalCount();
+        const countBigInt = await vault.proposalNum();
         const count = Number(countBigInt);
         
         const fetchedProposals: Proposal[] = [];
         
         // Fetch proposals in reverse order (newest first)
         for (let i = count; i > 0; i--) {
-          const [amount, policy, receiver, token, isClosed, isExecuted, isVault] = await Promise.all([
-            vault.proposalAmount(i),
-            vault.proposalPolicy(i),
-            vault.proposalReceiver(i),
-            vault.proposalToken(i),
-            vault.closedProposal(i),
-            vault.executed(i),
-            vault.isVault(i),
-          ]);
+          const prop = await vault.proposalBook(i);
+          const isClosed = await vault.closedProposals(i);
           
           let type = "Standard";
-          if (isVault) type = "Deposit/Withdraw";
-          else if (policy !== ethers.ZeroAddress) type = "AI Trade Policy";
+          if (Number(prop.request) === 2) type = "Add Token";
+          else if (Number(prop.request) === 3) type = "Exit";
+          else if (Number(prop.request) === 1) type = "Close";
+          else type = "AI Trade Policy";
 
           fetchedProposals.push({
             id: i,
-            amount: ethers.formatEther(amount),
-            policy,
-            receiver,
-            token,
-            isClosed,
-            isExecuted,
-            isVault,
+            amount: ethers.formatEther(prop.withdraw),
+            policy: prop.receiver,
+            receiver: prop.receiver,
+            token: prop.token,
+            isClosed: isClosed,
+            isExecuted: prop.executed,
+            isVault: Number(prop.request) === 0,
             type,
           });
         }

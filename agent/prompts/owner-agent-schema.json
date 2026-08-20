@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "taskType": {
+            "type": "string",
+            "enum": ["REBALANCE_SWAP", "LIQUIDATE_LOAN", "DRAFT_PROPOSAL", "NO_ACTION"]
+          },
+          "targetAddress": {
+            "type": "string",
+            "description": "The contract address to execute against (e.g., LendingPolicy or AssetSwapPolicy address)."
+          },
+          "actionPayload": {
+            "type": "object",
+            "description": "The specific data required for the execution relayer (e.g., borrower address for liquidation, or token address for swap)."
+          },
+          "rationale": {
+            "type": "string",
+            "description": "A concise explanation of why this action was taken."
+          }
+        },
+        "required": ["taskType", "rationale"]
+      }
+    },
+    "timestamp": {
+      "type": "number",
+      "description": "Unix timestamp of the evaluation."
+    }
+  },
+  "required": ["decisions", "timestamp"]
+}

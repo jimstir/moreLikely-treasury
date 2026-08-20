@@ -1,6 +1,6 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import { AIOwnerAgent, TreasuryGoals, TradeRecommendation } from "../src/agent/aiAgent";
+import { AIOwnerAgent, TreasuryGoals, TradeRecommendation } from "../../agent/aiAgent";
 
 describe("AI Owner Agent Decision Loop & 0G Compute Suite", function () {
     let treasuryVault: any;
@@ -39,6 +39,8 @@ describe("AI Owner Agent Decision Loop & 0G Compute Suite", function () {
         treasuryVault = await TreasuryVault.deploy(
             "AI Agent Treasury",
             await treasuryToken.getAddress(),
+            await mockUsdc.getAddress(),
+            100,
             "Proposal Shares",
             "VSHARE"
         );
@@ -152,7 +154,16 @@ describe("AI Owner Agent Decision Loop & 0G Compute Suite", function () {
 
     it("should successfully submit a trade proposal on-chain", async function () {
         // Approve mock token in vault first
-        await (await treasuryVault.newToken(await mockUsdc.getAddress())).wait();
+        const addTokenTx = await treasuryVault.proposalOpen(
+            0,
+            ethers.ZeroAddress,
+            owner.address,
+            1, // ADD_TOKEN
+            await mockUsdc.getAddress()
+        );
+        await addTokenTx.wait();
+        const pId = await treasuryVault.proposalNum();
+        await (await treasuryVault.newToken(await mockUsdc.getAddress(), pId)).wait();
 
         const trade: TradeRecommendation = {
             recommendTrade: true,
@@ -175,8 +186,7 @@ describe("AI Owner Agent Decision Loop & 0G Compute Suite", function () {
         const policy = await AssetSwapPolicy.deploy(
             await treasuryVault.getAddress(),
             await mockRouter.getAddress(),
-            aiAgentSigner.address,
-            owner.address
+            aiAgentSigner.address
         );
         await policy.waitForDeployment();
 

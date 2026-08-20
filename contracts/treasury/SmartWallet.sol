@@ -85,8 +85,7 @@ contract SmartWallet {
         uint256 amount,
         address receiver,
         address pOwner,
-        bool rate,
-        bool request,
+        TreasuryVault.ProposalType request,
         IERC20 token
     ) external onlyExecutionWallet returns (uint256) {
         require(
@@ -101,7 +100,6 @@ contract SmartWallet {
             amount,
             receiver,
             pOwner,
-            rate,
             request,
             token
         );
@@ -120,7 +118,7 @@ contract SmartWallet {
             "Target not allowed"
         );
         require(vault.vote(proposalId) == true, "Proposal not approved");
-        require(!vault.closedProposal(proposalId), "Proposal closed");
+        require(!vault.closedProposals(proposalId), "Proposal closed");
 
         uint256 gasStart = gasleft();
 

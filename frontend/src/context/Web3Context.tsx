@@ -95,7 +95,7 @@ export function Web3Provider({ children, treasuryVaultAddress }: Web3ProviderPro
       if (!treasuryVaultAddress) return;
       try {
         const vault = getTreasuryVault(treasuryVaultAddress, provider);
-        const owner = await vault.WhosOwner();
+        const owner = await vault.tOwner();
         setIsOwner(owner.toLowerCase() === userAddress.toLowerCase());
 
         // Check if user has TreasuryToken balance (indicates stakeholder)

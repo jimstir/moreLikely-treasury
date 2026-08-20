@@ -24,6 +24,12 @@ contract LendingPolicy is ITreasuryPolicy {
         address liquidator
     );
     event MaxLTVUpdated(uint256 oldLTV, uint256 newLTV);
+    event CollateralSeized(
+        address indexed borrower,
+        address indexed collateralToken,
+        uint256 amount,
+        uint256 outstandingDebt
+    );
 
     struct Loan {
         uint256 collateralAmount;
@@ -33,7 +39,6 @@ contract LendingPolicy is ITreasuryPolicy {
         IERC20 loanToken;
     }
 
-    address public owner;
     address public treasuryVault;
     uint256 public proposalNum;
 
@@ -41,11 +46,15 @@ contract LendingPolicy is ITreasuryPolicy {
     // Base is 10,000
     uint256 public maxLTV = 7500;
 
+    // Configurable maximum loan duration (default: 30 days)
+    uint256 public loanDuration = 30 days;
+
     // User address => Loan
     mapping(address => Loan) public loans;
 
     // Allowed collateral tokens
     mapping(IERC20 => bool) public acceptedCollateral;
+    mapping(address => uint256) public collateralProposalIds;
 
     address public oracleRouter;
     mapping(address => address) public tokenOracleMarkets;
@@ -55,22 +64,29 @@ contract LendingPolicy is ITreasuryPolicy {
 
     uint256 public override status; // 1 = Liquidated, 0 = Active
 
-    modifier onlyOwner() {
-        require(msg.sender == owner, "Only owner can call this");
+    modifier auth() {
+        require(
+            msg.sender == ITreasuryVault(treasuryVault).tOwner() || 
+            ITreasuryVault(treasuryVault).getAuth(msg.sender),
+            "Not authorized by TreasuryVault"
+        );
         _;
     }
 
     constructor(address _treasuryVault) {
-        owner = msg.sender;
         treasuryVault = _treasuryVault;
     }
 
-    function setOracleRouter(address _oracleRouter) external onlyOwner {
+    function setOracleRouter(address _oracleRouter) external auth {
         oracleRouter = _oracleRouter;
     }
 
-    function setTokenOracleMarket(address token, address market) external onlyOwner {
+    function setTokenOracleMarket(address token, address market) external auth {
         tokenOracleMarkets[token] = market;
+    }
+
+    function setLoanDuration(uint256 _duration) external auth {
+        loanDuration = _duration;
     }
 
     function getTotalValue() public view override returns (uint256) {
@@ -83,15 +99,19 @@ contract LendingPolicy is ITreasuryPolicy {
             if (totalManaged > 0) {
                 address market = tokenOracleMarkets[t];
                 if (market != address(0) && oracleRouter != address(0)) {
-                    (bool s1, bytes memory d1) = oracleRouter.staticcall(abi.encodeWithSignature("getPrice(address)", market));
+                    (bool s1, bytes memory d1) = oracleRouter.staticcall(
+                        abi.encodeWithSignature("getPrice(address)", market)
+                    );
                     if (s1 && d1.length > 0) {
                         uint256 price = abi.decode(d1, (uint256));
                         uint8 decimals = 18;
-                        (bool s2, bytes memory d2) = t.staticcall(abi.encodeWithSignature("decimals()"));
+                        (bool s2, bytes memory d2) = t.staticcall(
+                            abi.encodeWithSignature("decimals()")
+                        );
                         if (s2 && d2.length > 0) {
                             decimals = abi.decode(d2, (uint8));
                         }
-                        total += (totalManaged * price) / (10**decimals);
+                        total += (totalManaged * price) / (10 ** decimals);
                     }
                 } else {
                     total += totalManaged;
@@ -105,7 +125,7 @@ contract LendingPolicy is ITreasuryPolicy {
      * @dev Set the Maximum Loan-To-Value ratio.
      * E.g. 7500 = 75%. Base is 10,000.
      */
-    function setMaxLTV(uint256 _newLTV) external onlyOwner {
+    function setMaxLTV(uint256 _newLTV) external auth {
         require(_newLTV <= 10000, "LTV cannot exceed 100%");
         uint256 oldLTV = maxLTV;
         maxLTV = _newLTV;
@@ -117,9 +137,11 @@ contract LendingPolicy is ITreasuryPolicy {
      */
     function setAcceptedCollateral(
         IERC20 token,
-        bool accepted
-    ) external onlyOwner {
+        bool accepted,
+        uint256 proposalId
+    ) external auth {
         acceptedCollateral[token] = accepted;
+        collateralProposalIds[address(token)] = proposalId;
     }
 
     /**
@@ -132,7 +154,7 @@ contract LendingPolicy is ITreasuryPolicy {
         Loan storage loan = loans[msg.sender];
         if (loan.collateralAmount > 0) {
             require(
-                loan.collateralToken == token,
+                address(loan.collateralToken) == address(token),
                 "Cannot mix collateral types"
             );
         } else {
@@ -167,7 +189,7 @@ contract LendingPolicy is ITreasuryPolicy {
             loan.startTime = block.timestamp;
         } else {
             require(
-                loan.loanToken == loanToken,
+                address(loan.loanToken) == address(loanToken),
                 "Cannot borrow multiple token types"
             );
         }
@@ -268,8 +290,38 @@ contract LendingPolicy is ITreasuryPolicy {
         emit Liquidated(borrower, debtToRecover, collateralToSeize, msg.sender);
     }
 
-    function status() external view override returns (uint256) {
-        return status;
+    /**
+     * @dev Repossesses and seizes collateral of a defaulted or expired loan.
+     * Restricted to tOwner or treasuryVault (AI Agent).
+     */
+    function seizeCollateral(address borrower) external {
+        require(
+            msg.sender == ITreasuryVault(treasuryVault).tOwner() || 
+            ITreasuryVault(treasuryVault).getAuth(msg.sender) ||
+            msg.sender == treasuryVault,
+            "Only owner, vault or auth executor allowed"
+        );
+        Loan storage loan = loans[borrower];
+        require(loan.loanAmount > 0, "No active loan");
+
+        uint256 maxBorrow = (loan.collateralAmount * maxLTV) / 10000;
+        bool ltvBreached = loan.loanAmount > maxBorrow;
+        bool timeExpired = block.timestamp > loan.startTime + loanDuration;
+        require(ltvBreached || timeExpired, "Loan is healthy and active");
+
+        uint256 seizedDebt = loan.loanAmount;
+        uint256 seizedCollateralAmount = loan.collateralAmount;
+        IERC20 collateralToken = loan.collateralToken;
+
+        // Reset loan state
+        loan.loanAmount = 0;
+        loan.collateralAmount = 0;
+        totalOutstandingLoans[address(loan.loanToken)] -= seizedDebt;
+
+        // Transfer collateral directly to the TreasuryVault
+        collateralToken.safeTransfer(treasuryVault, seizedCollateralAmount);
+
+        emit CollateralSeized(borrower, address(collateralToken), seizedCollateralAmount, seizedDebt);
     }
 
     /**
@@ -277,22 +329,35 @@ contract LendingPolicy is ITreasuryPolicy {
      * Restricts call to the owner or the TreasuryVault.
      */
     function liquidate() external override {
-        require(msg.sender == owner || msg.sender == treasuryVault, "Only owner or vault allowed");
+        require(
+            msg.sender == ITreasuryVault(treasuryVault).tOwner() || 
+            ITreasuryVault(treasuryVault).getAuth(msg.sender) ||
+            msg.sender == treasuryVault,
+            "Only owner, vault or auth executor allowed"
+        );
         status = 1;
     }
 
-    function liquidateToken(address token) external onlyOwner {
+    function liquidateToken(address token) external auth {
         require(status == 1, "Not liquidated");
         uint256 balance = IERC20(token).balanceOf(address(this));
         require(balance > 0, "No balance to liquidate");
 
         IERC20(token).forceApprove(treasuryVault, balance);
-        bool ok = ITreasuryVault(treasuryVault).depositTreasury(IERC20(token), balance, false, 0);
+        bool ok = ITreasuryVault(treasuryVault).depositTreasury(
+            IERC20(token),
+            balance,
+            false,
+            0
+        );
         require(ok, "Liquidation deposit failed");
     }
 
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(ITreasuryPolicy).interfaceId || interfaceId == type(IERC165).interfaceId;
+    function supportsInterface(
+        bytes4 interfaceId
+    ) external pure override returns (bool) {
+        return
+            interfaceId == type(ITreasuryPolicy).interfaceId ||
+            interfaceId == type(IERC165).interfaceId;
     }
 }
-

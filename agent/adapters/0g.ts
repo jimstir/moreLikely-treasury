@@ -1,20 +1,28 @@
 import { ComputeClient } from '@0gfoundation/0g-compute-ts-sdk';
+import { ILLMProvider, InferenceResult } from '../interfaces';
 
-export class ZeroGAdapter {
+export class ZeroGAdapter implements ILLMProvider {
     private client: ComputeClient;
+    private model: string;
 
-    constructor(apiKey: string) {
-        // Initialize the standard 0G compute SDK client
+    constructor(apiKey: string, model: string = "0g-llama-3") {
         this.client = new ComputeClient({ apiKey });
+        this.model = model;
     }
 
-    public async requestInference(messages: any[]): Promise<any> {
+    public async requestInference(prompt: string | any[]): Promise<InferenceResult> {
         console.log(`[0G] Sending inference to 0G Compute...`);
+        const messages = typeof prompt === "string"
+            ? [
+                { role: "system", content: "You are an expert crypto treasury manager. Output JSON only." },
+                { role: "user", content: prompt }
+              ]
+            : prompt;
+
         try {
             const response = await this.client.chat.completions.create({
-                model: "0g-llama-3", // Base model hosted on the decentralized network
+                model: this.model,
                 messages: messages,
-                // In a production setup, tools schema would be passed into the adapter dynamically
                 tools: [
                     {
                         type: "function",
@@ -33,7 +41,6 @@ export class ZeroGAdapter {
             
             const message = response.choices[0].message;
             
-            // Normalize the 0G SDK response back into our internal interfaces
             return {
                 textResponse: message.content || "",
                 toolCalls: message.tool_calls?.map((tc: any) => ({
@@ -45,5 +52,9 @@ export class ZeroGAdapter {
             console.error(`[0G] Inference failed:`, error);
             throw error;
         }
+    }
+
+    public async getBillingStatus(): Promise<{ balance: string; unit: string }> {
+        return { balance: "100.0", unit: "ZG" };
     }
 }

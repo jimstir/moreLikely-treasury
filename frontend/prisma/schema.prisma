@@ -37,6 +37,7 @@ model Treasury {
   updatedAt       DateTime         @updatedAt
   goals           TreasuryGoals?
   proposals       Proposal[]
+  trustProfiles   TrustProfile[]
 }
 
 model TreasuryGoals {
@@ -120,3 +121,20 @@ model Dispute {
   resolved        Boolean  @default(false)
   createdAt       DateTime @default(now())
 }
+
+/// One trust-profile record per (wallet × treasury).
+/// Created when a user explicitly requests a profile.
+/// `scores` is a JSON snapshot of each attribute result.
+model TrustProfile {
+  id              String   @id @default(uuid())
+  walletAddress   String   // Lowercase EOA address of the requesting user
+  treasuryId      String
+  treasury        Treasury @relation(fields: [treasuryId], references: [id], onDelete: Cascade)
+  requestedAt     DateTime @default(now())
+  lastComputedAt  DateTime @default(now())
+  overallScore    Int      @default(0)   // 0-100 composite score
+  scores          Json?    // Serialised AttributeResult[] snapshot
+
+  @@unique([walletAddress, treasuryId])
+}
+

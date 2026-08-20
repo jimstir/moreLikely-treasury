@@ -18,51 +18,111 @@ contract PortionalExit is IExitPolicy {
     event ExitClaimed(address indexed user, uint256 treasuryTokenAmount, uint256 underlyingClaimed);
 
     address public override treasuryVault;
-    uint256 public override proposalNum;
-    uint256 public override swapRatio;
-    uint256 public override exitWindowEnd;
+    address public owner;
 
-    // Snapshot of user balances at the time of the exit proposal to prevent front-running
-    mapping(address => uint256) public eligibleShares;
+    uint256 public currentRound;
+
+    struct ExitPeriod {
+        uint256 proposalNum;
+        uint256 swapRatio;
+        uint256 exitWindowEnd;
+        bool isActive;
+    }
+
+    // roundId => ExitPeriod
+    mapping(uint256 => ExitPeriod) public exitPeriods;
+
+    // roundId => voterAddress => balance
+    mapping(uint256 => mapping(address => uint256)) public eligibleShares;
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Only owner can call this");
+        _;
+    }
 
     constructor(
         address _treasuryVault,
+        address _owner
+    ) {
+        require(_treasuryVault != address(0), "Invalid vault address");
+        require(_owner != address(0), "Invalid owner address");
+        
+        treasuryVault = _treasuryVault;
+        owner = _owner;
+    }
+
+    function proposalNum() external view override returns (uint256) {
+        return exitPeriods[currentRound].proposalNum;
+    }
+
+    function swapRatio() external view override returns (uint256) {
+        return exitPeriods[currentRound].swapRatio;
+    }
+
+    function exitWindowEnd() external view override returns (uint256) {
+        return exitPeriods[currentRound].exitWindowEnd;
+    }
+
+    /**
+     * @dev Starts a new portional exit period.
+     */
+    function startExitPeriod(
         uint256 _proposalNum,
         uint256 _swapRatio,
         uint256 _exitWindowEnd,
         address[] memory _eligibleUsers,
         uint256[] memory _eligibleBalances
-    ) {
-        require(_treasuryVault != address(0), "Invalid vault address");
+    ) external onlyOwner {
         require(_eligibleUsers.length == _eligibleBalances.length, "Array length mismatch");
         
-        treasuryVault = _treasuryVault;
-        proposalNum = _proposalNum;
-        swapRatio = _swapRatio;
-        exitWindowEnd = _exitWindowEnd;
+        if (currentRound > 0) {
+            exitPeriods[currentRound].isActive = false;
+        }
+
+        currentRound++;
+
+        exitPeriods[currentRound] = ExitPeriod({
+            proposalNum: _proposalNum,
+            swapRatio: _swapRatio,
+            exitWindowEnd: _exitWindowEnd,
+            isActive: true
+        });
 
         for (uint256 i = 0; i < _eligibleUsers.length; i++) {
-            eligibleShares[_eligibleUsers[i]] = _eligibleBalances[i];
+            eligibleShares[currentRound][_eligibleUsers[i]] = _eligibleBalances[i];
         }
+    }
+
+    /**
+     * @dev Deactivates the current active exit period.
+     */
+    function deactivateCurrentPeriod() external onlyOwner {
+        require(currentRound > 0, "No active round");
+        exitPeriods[currentRound].isActive = false;
     }
 
     /**
      * @dev Claims the exit by burning eligible treasury tokens and dispensing the pro-rata underlying asset.
      */
     function claimExit(uint256 amount) external override {
+        uint256 round = currentRound;
+        require(round > 0, "No active round");
+        ExitPeriod storage period = exitPeriods[round];
+        require(period.isActive, "Current exit period is not active");
+        
         require(amount > 0, "Amount must be greater than zero");
-        if (exitWindowEnd != 0) {
-            require(block.timestamp <= exitWindowEnd, "Exit window has ended");
+        if (period.exitWindowEnd != 0) {
+            require(block.timestamp <= period.exitWindowEnd, "Exit window has ended");
         }
         
-        require(amount <= eligibleShares[msg.sender], "Exceeds eligible balance at proposal time");
-        eligibleShares[msg.sender] -= amount;
+        require(amount <= eligibleShares[round][msg.sender], "Exceeds eligible balance");
+        eligibleShares[round][msg.sender] -= amount;
 
         TreasuryVault vault = TreasuryVault(payable(treasuryVault));
         IERC20 treasToken = IERC20(vault.treasToken());
         IERC20 exitToken = IERC20(vault.asset());
 
-        uint256 exitAmount = (amount * swapRatio) / 1e18;
+        uint256 exitAmount = (amount * period.swapRatio) / 1e18;
         require(exitAmount > 0, "Exit amount is zero");
         require(exitToken.balanceOf(address(this)) >= exitAmount, "Insufficient exit tokens in contract");
 

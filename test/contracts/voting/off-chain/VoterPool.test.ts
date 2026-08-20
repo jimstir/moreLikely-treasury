@@ -14,7 +14,7 @@ describe("VoterPool - Off-Chain Voting", function () {
         [owner, user1, user2] = await ethers.getSigners();
 
         // Deploy a mock ERC20 to act as the treasuryToken
-        const MockERC20 = await ethers.getContractFactory("ERC20Mock");
+        const MockERC20 = await ethers.getContractFactory("MockERC20");
         // Note: Assuming a mock ERC20 is available or will be created. 
         // For compilation to pass without mocks, you might need to adjust the setup.
 
