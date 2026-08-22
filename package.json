@@ -43,7 +43,11 @@
     "@0gfoundation/0g-storage-ts-sdk": "^1.2.10",
     "@chainlink/contracts": "^1.4.0",
     "@circle-fin/developer-controlled-wallets": "^10.6.0",
+    "@uniswap/sdk-core": "^7.19.1",
+    "@uniswap/smart-order-router": "^4.31.10",
+    "@uniswap/universal-router-sdk": "^5.11.3",
     "@uniswap/v3-core": "^1.0.1",
+    "@uniswap/v3-sdk": "^3.31.2",
     "node-forge": "^1.4.0"
   }
 }

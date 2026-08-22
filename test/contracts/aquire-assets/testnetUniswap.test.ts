@@ -3,6 +3,7 @@ import { ethers } from "hardhat";
 import { Signer } from "ethers";
 import * as fs from "fs";
 import * as path from "path";
+import { buildUniversalRouterSwapData } from "./uniswapSdkHelper";
 
 const DEPLOYMENTS_FILE = path.join(__dirname, "testnet-deployments.json");
 
@@ -19,8 +20,8 @@ describe("Live Sepolia Testnet Sweep (Test #3)", function () {
     let runIndex: number;
 
     const USDC_ADDRESS = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238";
-    const WETH_ADDRESS = "0x7b79995e5f793a07bc00c21412e50ecae098e7f9";
-    const UNIVERSAL_ROUTER = "0x3fc91a3afd20baba244d2e0e97e68207d094d29c";
+    const WETH_ADDRESS = "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14";
+    const UNIVERSAL_ROUTER = "0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E";
 
     before(async function () {
         // Load run data
@@ -154,28 +155,14 @@ describe("Live Sepolia Testnet Sweep (Test #3)", function () {
         await (await treasuryVault.proposalApproved(targetProposalId)).wait(1);
 
         // Fetch quote
-        console.log("          => Fetching live Uniswap API Quote...");
-        const response = await fetch("https://trade-api.gateway.uniswap.org/v1/quote", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "x-api-key": apiKey
-            },
-            body: JSON.stringify({
-                tokenInChainId: 11155111,
-                tokenOutChainId: 11155111,
-                tokenIn: USDC_ADDRESS,
-                tokenOut: WETH_ADDRESS,
-                amount: swapAmountIn.toString(),
-                type: "EXACT_INPUT",
-                recipient: await livePolicy.getAddress(),
-                slippageTolerance: "1"
-            })
-        });
-
-        const quoteResult = await response.json();
-        expect(response.ok, `Uniswap API call failed. Details: ${JSON.stringify(quoteResult)}`).to.be.true;
-        const swapCallData = quoteResult.transaction.data;
+        console.log("          => Fetching live Uniswap SDK Quote...");
+        const { calldata: swapCallData } = await buildUniversalRouterSwapData(
+            USDC_ADDRESS,
+            WETH_ADDRESS,
+            swapAmountIn.toString(),
+            await livePolicy.getAddress(),
+            3000
+        );
 
         const wethContract = await ethers.getContractAt(["function balanceOf(address) view returns (uint256)"], WETH_ADDRESS);
         const policyUsdcBefore = await usdcContract.balanceOf(await livePolicy.getAddress());

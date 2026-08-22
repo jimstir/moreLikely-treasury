@@ -3,6 +3,7 @@ import { ethers } from "hardhat";
 import { Signer } from "ethers";
 import * as fs from "fs";
 import * as path from "path";
+import { buildUniversalRouterSwapData } from "./uniswapSdkHelper";
 
 describe("Live Uniswap Sepolia Fork Test Suite", function () {
     let owner: Signer;
@@ -50,9 +51,9 @@ describe("Live Uniswap Sepolia Fork Test Suite", function () {
             this.skip();
         }
 
-        const WETH_ADDRESS = "0x7b79995e5f793a07bc00c21412e50ecae098e7f9";
+        const WETH_ADDRESS = "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14";
         const USDC_ADDRESS = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238";
-        const UNIVERSAL_ROUTER = "0x3fc91a3afd20baba244d2e0e97e68207d094d29c";
+        const UNIVERSAL_ROUTER = "0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E";
 
         // Deploy a policy contract configured with the real Sepolia Universal Router
         const AssetSwapPolicy = await ethers.getContractFactory("AssetSwapPolicy");
@@ -121,28 +122,12 @@ describe("Live Uniswap Sepolia Fork Test Suite", function () {
         expect(await wethContract.balanceOf(await livePolicy.getAddress())).to.equal(ethers.parseEther("0.0005"));
 
         // Fetch quote and transaction data from Uniswap Swapping API
-        const response = await fetch("https://trade-api.gateway.uniswap.org/v1/quote", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "x-api-key": apiKey
-            },
-            body: JSON.stringify({
-                tokenInChainId: 11155111,
-                tokenOutChainId: 11155111,
-                tokenIn: WETH_ADDRESS,
-                tokenOut: USDC_ADDRESS,
-                amount: ethers.parseEther("0.0005").toString(),
-                type: "EXACT_INPUT",
-                recipient: await livePolicy.getAddress(),
-                slippageTolerance: "0.5"
-            })
-        });
-
-        const quoteResult = await response.json();
-        expect(response.ok, `Uniswap API call failed. Details: ${JSON.stringify(quoteResult)}`).to.be.true;
-
-        const swapCallData = quoteResult.transaction.data;
+        const { calldata: swapCallData } = await buildUniversalRouterSwapData(
+            WETH_ADDRESS,
+            USDC_ADDRESS,
+            ethers.parseEther("0.0005").toString(),
+            await livePolicy.getAddress()
+        );
 
         const usdcContract = await ethers.getContractAt(
             ["function balanceOf(address) view returns (uint256)"],
@@ -210,9 +195,9 @@ describe("Live Uniswap Sepolia Fork Test Suite", function () {
             this.skip();
         }
 
-        const WETH_ADDRESS = "0x7b79995e5f793a07bc00c21412e50ecae098e7f9";
+        const WETH_ADDRESS = "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14";
         const USDC_ADDRESS = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238";
-        const UNIVERSAL_ROUTER = "0x3fc91a3afd20baba244d2e0e97e68207d094d29c";
+        const UNIVERSAL_ROUTER = "0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E";
 
         // Deploy a policy contract configured with the real Sepolia Universal Router
         const AssetSwapPolicy = await ethers.getContractFactory("AssetSwapPolicy");
@@ -231,23 +216,14 @@ describe("Live Uniswap Sepolia Fork Test Suite", function () {
 
         // 1. Fund the stakeholder with USDC using Uniswap API directly (simulating a user acquiring USDC on testnet)
         const amountEthToSwap = ethers.parseEther("0.05");
-        const fundResponse = await fetch("https://trade-api.gateway.uniswap.org/v1/quote", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "x-api-key": apiKey },
-            body: JSON.stringify({
-                tokenInChainId: 11155111,
-                tokenOutChainId: 11155111,
-                tokenIn: WETH_ADDRESS,
-                tokenOut: USDC_ADDRESS,
-                amount: amountEthToSwap.toString(),
-                type: "EXACT_INPUT",
-                recipient: stakeholderAddress,
-                slippageTolerance: "1"
-            })
-        });
-        const fundQuoteResult = await fundResponse.json();
-        expect(fundResponse.ok, `Uniswap API call failed for funding. Details: ${JSON.stringify(fundQuoteResult)}`).to.be.true;
-        const fundCallData = fundQuoteResult.transaction.data;
+        // 2. Fetch quote from Uniswap SDK (ETH -> USDC)
+        const { calldata: fundCallData } = await buildUniversalRouterSwapData(
+            WETH_ADDRESS,
+            USDC_ADDRESS,
+            amountEthToSwap.toString(),
+            stakeholderAddress,
+            3000 // fee 0.3%
+        );
 
         const wethContract: any = await ethers.getContractAt(
             ["function deposit() payable", "function approve(address, uint256) returns (bool)", "function balanceOf(address) view returns (uint256)"],
@@ -301,32 +277,15 @@ describe("Live Uniswap Sepolia Fork Test Suite", function () {
 
         expect(await usdcContract.balanceOf(await livePolicy.getAddress())).to.equal(swapAmountIn);
 
-        // 5. Fetch quote from Uniswap API (USDC -> WETH)
-        const response = await fetch("https://trade-api.gateway.uniswap.org/v1/quote", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "x-api-key": apiKey
-            },
-            body: JSON.stringify({
-                tokenInChainId: 11155111,
-                tokenOutChainId: 11155111,
-                tokenIn: USDC_ADDRESS,
-                tokenOut: WETH_ADDRESS,
-                amount: swapAmountIn.toString(),
-                type: "EXACT_INPUT",
-                recipient: await livePolicy.getAddress(),
-                slippageTolerance: "0.5"
-            })
-        });
-
-        const quoteResult = await response.json();
-        expect(response.ok, `Uniswap API call failed. Details: ${JSON.stringify(quoteResult)}`).to.be.true;
-
-        const swapCallData = quoteResult.transaction.data;
-        const expectedWethOut = BigInt(quoteResult.quote.quoteDecimals); // 18 decimals WETH value returned as formatted string usually, wait quoteResult structure depends on API.
-        // Actually quoteResult.quote.quote represents the raw amount.
-        const expectedWethOutRaw = BigInt(quoteResult.quote.quote);
+        // 5. Fetch quote from Uniswap SDK (USDC -> WETH)
+        const { calldata: swapCallData, expectedAmountOutRaw: expectedWethOutStr } = await buildUniversalRouterSwapData(
+            USDC_ADDRESS,
+            WETH_ADDRESS,
+            swapAmountIn.toString(),
+            await livePolicy.getAddress(),
+            3000
+        );
+        const expectedWethOutRaw = BigInt(expectedWethOutStr);
 
         // 6. Manual owner execution (No AI Agent signature required for owner due to auth modifier allowing owner directly)
         const policyUsdcBefore = await usdcContract.balanceOf(await livePolicy.getAddress());

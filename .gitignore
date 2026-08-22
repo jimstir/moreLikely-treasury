@@ -132,3 +132,10 @@ typechain-types/
 docs/To-DO.md
 docs/integration-wip.md
 docs/TestingPlan.md
+
+# AI Agents
+.agents/
+skills-lock.json
+
+# Test Logs
+test/inputs/*
