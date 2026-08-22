@@ -158,7 +158,7 @@ describe("AI Owner Agent Decision Loop & 0G Compute Suite", function () {
             0,
             ethers.ZeroAddress,
             owner.address,
-            1, // ADD_TOKEN
+            2, // ADD_TOKEN
             await mockUsdc.getAddress()
         );
         await addTokenTx.wait();
@@ -190,6 +190,10 @@ describe("AI Owner Agent Decision Loop & 0G Compute Suite", function () {
         );
         await policy.waitForDeployment();
 
+        // Authorize agent before submitting proposal
+        const agentWallet = new ethers.Wallet("0x5de4111afa73d9b5c2f207f136e1c9e30a5f8c00224d080f4f9f74053e1a18bc");
+        await treasuryVault.addAuth(agentWallet.address);
+        
         // Submit proposal via AI Agent wallet EOA
         const txHash = await agent.proposeTrade(
             await treasuryVault.getAddress(),

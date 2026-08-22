@@ -44,6 +44,7 @@ model TreasuryGoals {
   id                    String   @id @default(uuid())
   treasuryId            String   @unique
   treasury              Treasury @relation(fields: [treasuryId], references: [id], onDelete: Cascade)
+  mandate               String?  @default("No specific mandate provided.") // Shareholder goals for AI to evaluate against
   slippageLimit         Float    @default(0.5) // e.g. 0.5%
   stopLoss              Float    @default(5.0) // e.g. 5.0%
   maxTreasuryPercentage Float    @default(10.0) // max size of a single trade (e.g. 10.0%)
@@ -133,7 +134,9 @@ model TrustProfile {
   requestedAt     DateTime @default(now())
   lastComputedAt  DateTime @default(now())
   overallScore    Int      @default(0)   // 0-100 composite score
-  scores          Json?    // Serialised AttributeResult[] snapshot
+  scores          Json?    // Serialised AttributeResult[] snapshot (Layer 1)
+  aiOverlay       Json?    // Serialised AI contextual rationale snapshot (Layer 2)
+  isAutoRenewing  Boolean  @default(false) // Whether auto-audit is enabled via subscription
 
   @@unique([walletAddress, treasuryId])
 }

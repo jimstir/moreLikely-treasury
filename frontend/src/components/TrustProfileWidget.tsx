@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useWeb3 } from "@/context/Web3Context";
 import { computeTrustProfile, TrustProfileResult, AttributeResult } from "@/lib/trust-profile";
+import { AIOverlayResult } from "@/lib/ai-agent";
 import styles from "./TrustProfileWidget.module.css";
 
 interface TrustProfileWidgetProps {
@@ -11,11 +12,17 @@ interface TrustProfileWidgetProps {
   userAddress: string;
 }
 
+interface DBProfile extends TrustProfileResult {
+  aiOverlay?: AIOverlayResult[];
+  isAutoRenewing?: boolean;
+}
+
 export default function TrustProfileWidget({ treasuryId, vaultAddress, userAddress }: TrustProfileWidgetProps) {
   const { provider } = useWeb3();
-  const [profile, setProfile] = useState<TrustProfileResult | null>(null);
+  const [profile, setProfile] = useState<DBProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [computing, setComputing] = useState(false);
+  const [auditing, setAuditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Load existing profile from DB
@@ -32,7 +39,18 @@ export default function TrustProfileWidget({ treasuryId, vaultAddress, userAddre
               overallScore: data.overallScore,
               attributes: data.scores as AttributeResult[],
               computedAt: new Date(data.lastComputedAt).getTime(),
+              aiOverlay: data.aiOverlay as AIOverlayResult[],
+              isAutoRenewing: data.isAutoRenewing,
             });
+            
+            // Auto-audit logic
+            if (data.isAutoRenewing) {
+              const hoursSince = (Date.now() - new Date(data.lastComputedAt).getTime()) / (1000 * 60 * 60);
+              if (hoursSince > 24) {
+                // Background refresh if older than 24h
+                handleAiAudit();
+              }
+            }
           }
         }
       } catch (err) {
@@ -42,6 +60,7 @@ export default function TrustProfileWidget({ treasuryId, vaultAddress, userAddre
       }
     }
     loadProfile();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [treasuryId, userAddress]);
 
   const handleGenerate = async () => {
@@ -52,16 +71,11 @@ export default function TrustProfileWidget({ treasuryId, vaultAddress, userAddre
     setComputing(true);
     setError(null);
     try {
-      // 1. Compute trust profile via on-chain reads
       const result = await computeTrustProfile({
         vaultAddress,
         provider,
-        // In a real app, these would be fetched from the treasury configuration/DB
-        // swapPolicyAddress: "0x...",
-        // lendingPolicyAddress: "0x...",
       });
 
-      // 2. Save to DB
       const res = await fetch("/api/trust-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -73,9 +87,7 @@ export default function TrustProfileWidget({ treasuryId, vaultAddress, userAddre
         }),
       });
 
-      if (!res.ok) {
-        throw new Error("Failed to save trust profile to database.");
-      }
+      if (!res.ok) throw new Error("Failed to save trust profile to database.");
 
       setProfile(result);
     } catch (err: any) {
@@ -86,10 +98,62 @@ export default function TrustProfileWidget({ treasuryId, vaultAddress, userAddre
     }
   };
 
+  const handleAiAudit = async () => {
+    setAuditing(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/trust-profile/audit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ treasuryId, walletAddress: userAddress }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "AI Audit failed.");
+      }
+
+      const updatedData = await res.json();
+      setProfile((prev) => prev ? {
+        ...prev,
+        aiOverlay: updatedData.aiOverlay,
+        computedAt: new Date(updatedData.lastComputedAt).getTime(),
+      } : null);
+
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message);
+    } finally {
+      setAuditing(false);
+    }
+  };
+
+  const toggleAutoRenew = async () => {
+    if (!profile) return;
+    const newState = !profile.isAutoRenewing;
+    setProfile({ ...profile, isAutoRenewing: newState });
+    
+    try {
+      await fetch("/api/trust-profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          treasuryId,
+          walletAddress: userAddress,
+          isAutoRenewing: newState,
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to toggle auto-renew:", err);
+      // Revert state on fail
+      setProfile({ ...profile, isAutoRenewing: !newState });
+    }
+  };
+
   const getSeverityColor = (sev: string) => {
-    if (sev === "safe") return "#4ade80"; // green-400
-    if (sev === "warning") return "#fbbf24"; // amber-400
-    return "#f87171"; // red-400
+    if (sev === "safe") return "#4ade80";
+    if (sev === "warning") return "#fbbf24";
+    return "#f87171";
   };
 
   if (loading) {
@@ -101,133 +165,111 @@ export default function TrustProfileWidget({ treasuryId, vaultAddress, userAddre
     );
   }
 
-  // Not generated yet
   if (!profile) {
     return (
       <div className={styles.ctaCard}>
         <div className={styles.ctaIcon}>🛡️</div>
         <h3>Trust Profile Not Generated</h3>
-        <p>
-          Each user must explicitly request a trust profile for a treasury. 
-          Generating it will audit on-chain governance metrics, token addition controls, 
-          and AI agent security paths.
-        </p>
+        <p>Each user must explicitly request a trust profile for a treasury.</p>
         <button 
           className="btn btn-primary" 
           onClick={handleGenerate} 
           disabled={computing || !provider}
           style={{ marginTop: 12, minWidth: 200 }}
         >
-          {computing ? (
-            <span style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}>
-              <span className={styles.spinner} /> Auditing...
-            </span>
-          ) : (
-            "Generate Trust Profile"
-          )}
+          {computing ? <span className={styles.spinner} /> : "Generate Trust Profile"}
         </button>
         {error && <div style={{ color: "#f87171", fontSize: 13, marginTop: 12 }}>{error}</div>}
       </div>
     );
   }
 
-  // Render the Profile
   return (
     <div className={`glass-card ${styles.container}`}>
-      {/* Header */}
+      {/* Top Controls: Auto Renew */}
+      <div className={styles.topControls}>
+        <label className={styles.toggleWrap}>
+          <input 
+            type="checkbox" 
+            checked={!!profile.isAutoRenewing} 
+            onChange={toggleAutoRenew} 
+          />
+          <span className={styles.toggleSlider}></span>
+          <span style={{ fontSize: 13 }}>Auto-Renew & Audit (Subscription Required)</span>
+        </label>
+        <button 
+          className="btn btn-primary" 
+          onClick={handleAiAudit} 
+          disabled={auditing}
+          style={{ padding: "6px 14px", fontSize: 12 }}
+        >
+          {auditing ? "🤖 Auditing..." : "🤖 Run AI Audit"}
+        </button>
+      </div>
+      
+      {error && <div style={{ color: "#f87171", fontSize: 13, padding: "0 20px" }}>{error}</div>}
+
       <div className={styles.header}>
-        {/* Ring Gauge */}
         <div className={styles.ringWrap}>
           <svg width="110" height="110" viewBox="0 0 110 110">
+            <circle cx="55" cy="55" r="48" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="10" />
             <circle 
-              cx="55" cy="55" r="48" 
-              fill="none" 
-              stroke="rgba(255,255,255,0.08)" 
-              strokeWidth="10" 
-            />
-            <circle 
-              cx="55" cy="55" r="48" 
-              fill="none" 
+              cx="55" cy="55" r="48" fill="none" 
               stroke={profile.overallScore >= 80 ? "#4ade80" : profile.overallScore >= 50 ? "#fbbf24" : "#f87171"} 
-              strokeWidth="10" 
-              strokeDasharray="301.59" 
+              strokeWidth="10" strokeDasharray="301.59" 
               strokeDashoffset={301.59 - (301.59 * profile.overallScore) / 100}
-              strokeLinecap="round"
-              style={{ transition: "stroke-dashoffset 1s ease-out" }}
+              strokeLinecap="round" style={{ transition: "stroke-dashoffset 1s ease-out" }}
             />
           </svg>
           <div className={styles.ringLabel}>
             <span className={styles.ringScore}>{profile.overallScore}</span>
-            <span className={styles.ringCaption}>Trust Score</span>
+            <span className={styles.ringCaption}>Score</span>
           </div>
         </div>
-
         <div className={styles.titleBlock}>
           <h2>Governance & Security Audit</h2>
-          <p>
-            This treasury has been audited against the 7 standardized trust metrics. 
-            Scores reflect the degree of centralization risk and default exposure.
-          </p>
-        </div>
-
-        <div>
-          <button 
-            className="btn btn-secondary" 
-            onClick={handleGenerate} 
-            disabled={computing}
-            style={{ fontSize: 13, padding: "8px 16px" }}
-          >
-            {computing ? "Refreshing..." : "↻ Refresh Audit"}
-          </button>
+          <p>Layer 1 deterministic metrics combined with Layer 2 AI Contextual Overlay.</p>
         </div>
       </div>
 
-      {/* Attribute List */}
       <div className={styles.attributeList}>
-        {profile.attributes.map((attr) => (
-          <div key={attr.id} className={styles.attributeRow}>
-            <div className={styles.attrIndex}>{attr.id}</div>
-            
-            <div className={styles.attrBody}>
-              <div className={styles.attrTop}>
-                <span className={styles.attrTitle}>{attr.title}</span>
-                <span className={`${styles.badge} ${styles[attr.severity]}`}>
-                  {attr.severity}
-                </span>
+        {profile.attributes.map((attr) => {
+          const aiContext = profile.aiOverlay?.find(a => a.attributeId === attr.id);
+          const currentSeverity = aiContext ? aiContext.revisedSeverity : attr.severity;
+          
+          return (
+            <div key={attr.id} className={styles.attributeRow}>
+              <div className={styles.attrIndex}>{attr.id}</div>
+              
+              <div className={styles.attrBody}>
+                <div className={styles.attrTop}>
+                  <span className={styles.attrTitle}>{attr.title}</span>
+                  {aiContext && aiContext.revisedSeverity !== attr.severity && (
+                     <span style={{ fontSize: 11, color: '#aaa', textDecoration: 'line-through', marginRight: 8 }}>
+                       {attr.severity}
+                     </span>
+                  )}
+                  <span className={`${styles.badge} ${styles[currentSeverity]}`}>
+                    {currentSeverity}
+                  </span>
+                  {aiContext && <span className={styles.aiBadge}>🤖 AI Analyzed</span>}
+                </div>
+                <div className={styles.attrDetail}>{attr.detail}</div>
+                {attr.rawValue && <div className={styles.attrRaw}>{attr.rawValue}</div>}
+                
+                {aiContext && (
+                  <div className={styles.aiRationaleBox}>
+                    <strong>AI Rationale:</strong> {aiContext.aiRationale}
+                  </div>
+                )}
               </div>
-              <div className={styles.attrDetail}>{attr.detail}</div>
-              {attr.rawValue && (
-                <div className={styles.attrRaw}>{attr.rawValue}</div>
-              )}
             </div>
-
-            {/* Score visualizer */}
-            <div className={styles.attrScoreBar}>
-              <div className={styles.attrScoreNum} style={{ color: getSeverityColor(attr.severity) }}>
-                {attr.score}
-              </div>
-              <div className={styles.attrScoreTrack}>
-                <div 
-                  className={styles.attrScoreFill} 
-                  style={{ 
-                    height: `${attr.score}%`,
-                    backgroundColor: getSeverityColor(attr.severity) 
-                  }} 
-                />
-              </div>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      {/* Footer */}
       <div className={styles.footer}>
-        <span className={styles.footerNote}>
-          Last audited: {new Date(profile.computedAt).toLocaleString()}
-        </span>
-        <span className={styles.footerNote}>
-          Data sourced on-chain via Web3 Provider
-        </span>
+        <span className={styles.footerNote}>Last computed: {new Date(profile.computedAt).toLocaleString()}</span>
       </div>
     </div>
   );

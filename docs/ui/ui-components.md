@@ -308,7 +308,8 @@ The agent cannot bypass these on-chain checks. The tools are the agent's interfa
 The UI MUST compile a Trust Profile of the treasury and display it transparently to stakeholders before they interact with the platform. To prevent "false positives" penalizing normal treasury delays, the Trust Profile is divided into two layers:
 
 *   **Layer 1 (Raw On-Chain Data):** The deterministic metrics queried directly from the blockchain (the "What").
-*   **Layer 2 (AI Contextual Overlay):** An active audit performed by the `AIShareholderAgent` that evaluates Layer 1 against recent on-chain events. The AI outputs a JSON assessment overlaying a contextual rationale (the "Why") that may downgrade the severity of a flagged metric (e.g., explaining that an unapproved token is pending a passed removal vote).
+*   **Layer 2 (AI Contextual Overlay):** An active audit performed by the `AIShareholderAgent` that evaluates Layer 1 against the Treasury's stated **Mandate** and recent on-chain events. The AI outputs a JSON assessment overlaying a contextual rationale (the "Why") that may downgrade the severity of a flagged metric (e.g., explaining that an unapproved token is pending a passed removal vote).
+    *   **Auto-Renew Subscription:** Layer 2 AI audits require compute resources. The UI MUST provide an "Auto-Renew & Audit" toggle. This requires the user to hold an active subscription verified on-chain via the `SubscriptionManager` contract. When enabled, the profile automatically refreshes the AI audit when viewed if the data is stale (>24 hours).
 
 This profile is evaluated using the following criteria:
 

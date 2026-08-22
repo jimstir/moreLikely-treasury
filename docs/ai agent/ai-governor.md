@@ -32,6 +32,7 @@ The AI Governor mechanism is integrated directly into the core treasury concepts
 2. **Shareholder/User Agent (Trust & Voting Helper):**
    * **Description:** Tasked by a current or future stakeholder to continuously monitor the treasury's **Trust Profile**.
    * **Dashboard Integration:** The Trust Profile operates as a dedicated module. When managed by the Shareholder Agent, its computed security scores, flags, and warnings are compiled and displayed in a dedicated widget inside the Treasury's independent details dashboard (can also be manually operated by the user).
+   * **Layer 2 Contextual Overlay:** Users with an active on-chain subscription (verified via the `SubscriptionManager` contract defined in `.env`) can enable automatic Trust Profile evaluations. The AI Governor analyzes raw Layer 1 metrics against the **Treasury Mandate** (shareholder goals) to dynamically adjust severity scores and provide structural rationales for any flagged items.
    * **Governance Automation:** Analyzes incoming proposals against the user's custom risk limits and recommends or automatically signs and submits votes on their behalf.
 3. **Operator Agent (Arbitrage & Liquidator):**
    * **Description:** Deployed by external searchers/arbitrageurs to generate profits from liquidation bonuses.

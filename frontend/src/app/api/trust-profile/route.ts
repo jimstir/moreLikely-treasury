@@ -25,11 +25,11 @@ export async function GET(req: NextRequest) {
 
 /** POST /api/trust-profile
  *  Creates or returns an existing profile request row.
- *  Body: { treasuryId, walletAddress, overallScore?, scores? }
+ *  Body: { treasuryId, walletAddress, overallScore?, scores?, aiOverlay?, isAutoRenewing? }
  */
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { treasuryId, walletAddress: rawWallet, overallScore, scores } = body;
+  const { treasuryId, walletAddress: rawWallet, overallScore, scores, aiOverlay, isAutoRenewing } = body;
   const walletAddress = rawWallet?.toLowerCase();
 
   if (!treasuryId || !walletAddress) {
@@ -43,11 +43,15 @@ export async function POST(req: NextRequest) {
       treasuryId,
       overallScore: overallScore ?? 0,
       scores: scores ?? undefined,
+      aiOverlay: aiOverlay ?? undefined,
+      isAutoRenewing: isAutoRenewing ?? false,
       lastComputedAt: new Date(),
     },
     update: {
       overallScore: overallScore ?? undefined,
       scores: scores ?? undefined,
+      aiOverlay: aiOverlay !== undefined ? aiOverlay : undefined,
+      isAutoRenewing: isAutoRenewing !== undefined ? isAutoRenewing : undefined,
       lastComputedAt: new Date(),
     },
   });
