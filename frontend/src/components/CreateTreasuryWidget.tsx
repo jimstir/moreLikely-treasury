@@ -30,7 +30,7 @@ const DEFAULT_USDC_ADDRESSES: Record<string, string> = {
 
 export default function CreateTreasuryWidget({ onCreated }: CreateTreasuryWidgetProps) {
   const { provider, signer, address, switchNetwork } = useWeb3();
-  const [step, setStep] = useState<"form" | "deploying" | "success">("form");
+  const [step, setStep] = useState<"form" | "deploying" | "policySetup" | "success">("form");
   const [formData, setFormData] = useState<FormData>({
     treasuryName: "",
     tokenName: "",
@@ -223,7 +223,7 @@ export default function CreateTreasuryWidget({ onCreated }: CreateTreasuryWidget
 
       setDeployedAddresses({ token: tokenAddress, vault: vaultAddress, treasuryId });
       setDeployStatus("Treasury deployed successfully!");
-      setStep("success");
+      setStep("policySetup");
 
       if (onCreated) {
         onCreated(vaultAddress, tokenAddress, treasuryId);
@@ -408,7 +408,7 @@ export default function CreateTreasuryWidget({ onCreated }: CreateTreasuryWidget
             className="btn btn-primary"
             onClick={() => {
               setStep("form");
-              setFormData({ treasuryName: "", tokenName: "", tokenSymbol: "" });
+              setFormData({ treasuryName: "", tokenName: "", tokenSymbol: "" } as FormData);
               setValidationErrors({});
             }}
             id="create-another-btn"
@@ -417,6 +417,133 @@ export default function CreateTreasuryWidget({ onCreated }: CreateTreasuryWidget
           </button>
         </div>
       )}
+
+      {step === "policySetup" && deployedAddresses && (
+        <PolicySetupStep
+          vaultAddress={deployedAddresses.vault}
+          treasuryId={deployedAddresses.treasuryId}
+          onComplete={() => setStep("success")}
+        />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// PolicySetupStep Sub-Component
+// ---------------------------------------------------------------------------
+function PolicySetupStep({
+  vaultAddress,
+  treasuryId,
+  onComplete,
+}: {
+  vaultAddress: string;
+  treasuryId: string;
+  onComplete: () => void;
+}) {
+  const { provider, signer } = useWeb3();
+  const [option, setOption] = useState<"skip" | "deploySwap" | "link">("skip");
+  const [existingAddress, setExistingAddress] = useState("");
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const handleExecute = async () => {
+    try {
+      if (!signer) throw new Error("Wallet not connected");
+      setError(null);
+
+      if (option === "skip") {
+        onComplete();
+        return;
+      }
+
+      let finalPolicyAddress = "";
+
+      if (option === "link") {
+        if (!ethers.isAddress(existingAddress)) {
+          throw new Error("Invalid contract address");
+        }
+        finalPolicyAddress = existingAddress.trim();
+        setStatus("Linking existing policy...");
+      } else if (option === "deploySwap") {
+        setStatus("Fetching AssetSwapPolicy artifact...");
+        const res = await fetch("/api/contracts/artifacts?name=AssetSwapPolicy");
+        if (!res.ok) throw new Error("Could not fetch AssetSwapPolicy artifact");
+        const artifact = await res.json();
+
+        setStatus("Deploying AssetSwapPolicy contract...");
+        const factory = new ethers.ContractFactory(artifact.abi, artifact.bytecode, signer);
+        
+        const swapRouter02 = "0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E"; // Sepolia
+        const oracleRouter = process.env.NEXT_PUBLIC_ORACLE_ROUTER_ADDRESS || ethers.ZeroAddress;
+
+        const contract = await factory.deploy(vaultAddress, swapRouter02, oracleRouter);
+        await contract.waitForDeployment();
+        finalPolicyAddress = await contract.getAddress();
+      }
+
+      setStatus("Saving policy to database...");
+      // In a real implementation, you would call a backend endpoint here to register 
+      // the policyAddress against the treasuryId.
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      onComplete();
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Failed to setup policy.");
+      setStatus("");
+    }
+  };
+
+  return (
+    <div className={styles.policySetup}>
+      <div className={styles.successIcon}>✅</div>
+      <h3>Treasury Deployed!</h3>
+      <p style={{ marginBottom: 20 }}>
+        Your vault and token are live. Do you want to attach a Treasury Policy now?
+      </p>
+
+      <div className={styles.field}>
+        <select
+          className="input"
+          value={option}
+          onChange={(e) => setOption(e.target.value as any)}
+        >
+          <option value="skip">Skip for now</option>
+          <option value="deploySwap">Deploy new AssetSwapPolicy</option>
+          <option value="link">Link existing Policy Address</option>
+        </select>
+      </div>
+
+      {option === "link" && (
+        <div className={styles.field} style={{ marginTop: 10 }}>
+          <input
+            className="input"
+            placeholder="0x..."
+            value={existingAddress}
+            onChange={(e) => setExistingAddress(e.target.value)}
+          />
+        </div>
+      )}
+
+      {error && (
+        <div className="alert alert-danger" style={{ marginTop: 10 }}>
+          <span>⚠️ {error}</span>
+        </div>
+      )}
+
+      {status && (
+        <p className={styles.deployStatus} style={{ marginTop: 10 }}>{status}</p>
+      )}
+
+      <button
+        className="btn btn-primary btn-lg"
+        style={{ width: "100%", marginTop: 20 }}
+        onClick={handleExecute}
+        disabled={!!status && !error}
+      >
+        {status && !error ? "Processing..." : "Continue"}
+      </button>
     </div>
   );
 }

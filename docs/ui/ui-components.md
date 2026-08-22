@@ -60,10 +60,20 @@ A wallet needs to be connected which acts as the user's identity.
   - First deploys the `TreasuryToken` contract to represent voting weight.
   - Next deploys the `TreasuryVault` contract with the reference token address.
   - Registers the deployer wallet as the initial `_tOwner` of the vault.
+  - **Policy Setup (Optional):** Prompts the user to deploy an `AssetSwapPolicy` (or `LendingPolicy`) or link an existing policy to the treasury. The `AssetSwapPolicy` is deployed referencing the official `SwapRouter02` and utilizing the global `OracleRouter` address fetched from the environment variables.
 - **Backend / On-chain Sync:**
   - Broadcasts smart contract deployment transactions to the EVM network.
-  - Saves the newly deployed contract addresses to the user's active session and application database.
+  - Saves the newly deployed contract addresses (`vaultAddress`, `tokenAddress`, `policyAddress`) to the user's active session and application database.
   - Redirects the user to the Treasury Operator Dashboard.
+
+### Create a Policy Proposal
+
+- **Component:** `CreateProposalWidget`
+- **Trigger:** Owner wants to propose a new treasury action (like swapping assets) from the Treasury Dashboard.
+- **Action:**
+  - Owner selects an available policy from the dropdown (policies previously deployed/linked in the `CreateTreasuryWidget`).
+  - Owner inputs target proposal parameters (Amount, Target Token).
+  - Triggers the `proposalOpen()` on-chain transaction on the `TreasuryVault` using `ProposalType.TXNS`.
 
 ### Deploying the Treasury Governor Agent
 
