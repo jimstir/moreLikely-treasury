@@ -117,39 +117,40 @@ model Dispute {
 
 ## 2. Technical Mechanisms
 
-### A. Off-Chain Voting & On-Chain Attestation
-To avoid high gas fees for stakeholders casting votes, the application implements off-chain voting with on-chain cryptographic attestation.
+### A. Off-Chain Voting & On-Chain Merkle Proofs
+To avoid high gas fees for shareholders casting votes, the application implements off-chain voting secured by on-chain Merkle proof verification.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Stakeholder
+    actor Shareholder
     participant Frontend
     participant DB as Next.js DB
     participant Agent as 0G Owner Agent
-    participant Contract as AssetSwapPolicy.sol
+    participant Contract as VoterPool / TreasuryVault
 
-    Stakeholder->>Frontend: Casts Vote (Approve/Reject)
-    Frontend->>Stakeholder: Prompts MetaMask signTypedData (EIP-712)
-    Stakeholder-->>Frontend: Returns Cryptographic Signature
+    Shareholder->>Frontend: Casts Vote (Approve/Reject)
+    Frontend->>Shareholder: Prompts MetaMask signTypedData (EIP-712)
+    Shareholder-->>Frontend: Returns Cryptographic Signature
     Frontend->>DB: POST /api/voting/cast {signature, voter, support}
-    Note over DB: Validates signature & checks share balance at proposal start block
+    Note over DB: Validates signature & checks share balance
     
     Note over Agent: Voting Interval Ends
     Agent->>DB: Fetches aggregated votes
-    Note over Agent: Generates ECDSA Attestation: Hash(proposalId, votesFor, votesAgainst) signed by Agent
-    Agent->>Contract: proposalApproved(proposalId, totalVotesFor, totalVotesAgainst, attestationSignature)
-    Note over Contract: ecrecover(attestationSignature) == registered AttestationSigner
-    Note over Contract: Executes Uniswap Swap
+    Note over Agent: Generates Merkle Tree of all valid EIP-712 signatures
+    Agent->>Contract: submitVoteResult(proposalId, merkleRoot, totalVotesFor, totalVotesAgainst)
+    Note over Contract: Stores Merkle Root for independent verification
+    Note over Contract: Proposal becomes Executable if passed
 ```
 
 1. **EIP-712 Signature**: The voting message is structured:
    - `domain`: `{ name: "SmartTreasuryVoting", version: "1", chainId: X, verifyingContract: Address }`
    - `types`: `{ Vote: [{ name: "proposalId", type: "uint256" }, { name: "support", type: "bool" }, { name: "voter", type: "address" }] }`
-2. **Aggregated Attestation**:
-   - The AI Owner Agent acts as the authorized validator (its associated Circle Wallet ID or EOA address is registered as `attestationSigner` in `AssetSwapPolicy.sol`).
-   - When the voting window closes, the agent signs the outcome payload: `keccak256(abi.encodePacked(proposalId, totalVotesFor, totalVotesAgainst, passed))`.
-   - The transaction submitted to the contract passes these parameters along with the signature. The contract executes `ecrecover` to confirm the authenticity of the attestation before executing the swap.
+2. **Aggregated Merkle Proofs**:
+   - The frontend database stores all valid EIP-712 signatures.
+   - When the voting window closes, a Merkle Tree is constructed off-chain where each leaf is a cryptographic hash of a valid shareholder vote.
+   - The resulting Merkle Root is submitted to the smart contract along with the final vote tallies. 
+   - The smart contract natively enforces execution conditions, and anyone can independently cryptographically verify a vote was counted by generating a proof against the on-chain Merkle Root, completely removing the need for a centralized "Agent Attestation".
 
 ### B. Audit disputes & Verification (0G Platform)
 - The AI Agent runs inside a verifiable execution environment on **0G**. When it invokes the LLM (Gemini or OpenAI), it records the prompt inputs, model parameters, and raw output.

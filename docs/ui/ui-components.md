@@ -213,10 +213,10 @@ The following tools are implemented as local functions on the backend. They are 
 - **Implementation:** Reads aggregated off-chain EIP-712 signed votes from the database and checks on-chain dispute status.
 
 ##### 8. `execute_swap`
-- **Description:** Executes an approved swap proposal. Generates the agent's ECDSA attestation signature over the voting outcome, calls `proposalApproved` on `TreasuryVault` to transfer funds to the policy contract, then calls `executeSwap` on `AssetSwapPolicy` with the Uniswap calldata.
-- **Parameters:** `{ proposalId: number, tokenIn: string, tokenOut: string, amountIn: string, totalVotesFor: string, totalVotesAgainst: string, swapCallData: string }`
+- **Description:** Executes an approved swap proposal. Calls `executeSwap` on `AssetSwapPolicy` with the Uniswap calldata.
+- **Parameters:** `{ proposalId: number, tokenIn: string, tokenOut: string, amountIn: string, swapCallData: string }`
 - **Returns:** `{ success: boolean, txHash: string, amountOut: string }`
-- **Implementation:** Generates the attestation payload and submits the on-chain transaction via the Circle Developer-Controlled Wallet SDK. The `AssetSwapPolicy` contract verifies the attestation via `ecrecover` before executing the Uniswap swap.
+- **Implementation:** Submits the on-chain transaction via the Circle Developer-Controlled Wallet SDK. The `AssetSwapPolicy` contract verifies that the proposal was approved natively on-chain before executing the Uniswap swap.
 
 ##### 9. `get_proposals`
 - **Description:** Returns all proposals for the treasury, filtered by status. Used by the agent to monitor open proposals, track execution, and decide whether to close stale proposals.
@@ -286,7 +286,7 @@ Transcripts are stored in the `AgentInvocation` database model and linked to the
 #### On-Chain Safety Boundary
 
 Regardless of the agent's reasoning, the smart contracts enforce hard safety rules:
-- `AssetSwapPolicy.executeSwap()` requires a valid ECDSA attestation signature, voting threshold (`totalVotesFor > totalVotesAgainst`), and sufficient token balance.
+- `AssetSwapPolicy.executeSwap()` requires the proposal to be marked as approved, voting threshold met, and sufficient token balance.
 - `triggerDispute()` allows any stakeholder with >1% shares to pause execution.
 - The `TreasuryVault` enforces proposal accounting and prevents double-execution.
 
@@ -415,7 +415,7 @@ The proof generated that specific user about their pool account is submitted. Th
     - `Proposal List`: Shows all open proposals with recipient details.
 - **`VotingInterface`** (UI Component)
     - `Off-Chain Voting Portal`: Allows stakeholders to cast gasless cryptographic signature votes.
-    - `Attestation Broadcaster`: Collects off-chain votes, aggregates them, and calls the contract's attestation verification endpoint to lock/unlock on-chain execution.
+    - `Merkle Broadcaster`: Collects off-chain EIP-712 votes, generates a Merkle Tree, and calls the contract to lock/unlock on-chain execution with the Merkle Root.
 
 
 
@@ -427,8 +427,8 @@ The AI agent logic is implemented as a backend module (not API endpoints). The m
 - **AI Network Adapters** — Pluggable adapters for each supported AI network (0G Compute, Gemini, OpenAI, etc.). Each adapter translates the tool definitions and conversation messages into the network's specific API format (e.g. OpenAI-compatible chat completions with `tools` parameter). New networks are added by implementing a new adapter.
 - **Conversation Logger** — Persists the complete request-response transcript of each invocation to the `AgentInvocation` database model. Cross-links transcripts to proposals and `DecisionReport` records for audit.
 
-- **`POST /api/voting/attest`** (Attestation API)
-    - Validates off-chain signature votes and pushes the aggregated attestation record to the blockchain.
+- **`POST /api/voting/merkle-publish`** (Voting Result API)
+    - Validates off-chain signature votes, generates a Merkle Root, and pushes the result to the blockchain.
 - **`POST /api/audit/report`** (Audit API)
     - Submits a dispute report and sets contract state to "Review Period Paused".
 
@@ -446,7 +446,7 @@ The AI agent logic is implemented as a backend module (not API endpoints). The m
   - Represents voting shares inside the vault.
 - **`AssetSwapPolicy.sol` (Policy Contract)**
   - Deployed policy contract linked to specific proposal types.
-  - Implements checks for voting attestations and verifies authorized transactions.
+  - Implements checks for proposal approval status and verifies authorized transactions.
   - Interacts directly with the Uniswap Router/APIs to manage buying and selling assets.
   - Receives approved funds from the vault and executes atomic swap routes.
   - **Production vs. Testnet Targets:** While automated unit tests and local fork simulations utilize the Ethereum Sepolia testnet environment and WETH/USDC addresses, the production deployment of the application and policy contract MUST target the **Uniswap Ethereum Mainnet** implementation (using mainnet token addresses and the mainnet Universal Router).
