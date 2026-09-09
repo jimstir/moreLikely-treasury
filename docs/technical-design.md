@@ -45,6 +45,8 @@ model TreasuryGoals {
   id                    String   @id @default(uuid())
   treasuryId            String   @unique
   treasury              Treasury @relation(fields: [treasuryId], references: [id], onDelete: Cascade)
+  mandate               String?  @default("No specific mandate provided.") // Shareholder goals for AI to evaluate against
+  privateOverrides      Json?    // e.g. { "assetSwap": "Custom override prompt" }
   slippageLimit         Float    @default(0.5) // e.g. 0.5%
   stopLoss              Float    @default(5.0) // e.g. 5.0%
   maxTreasuryPercentage Float    @default(10.0) // max size of a single trade (e.g. 10.0%)
@@ -110,6 +112,14 @@ model Dispute {
   reviewPeriodEnd DateTime // Time when the pause window expires
   resolved        Boolean  @default(false)
   createdAt       DateTime @default(now())
+}
+
+model PlatformConfig {
+  id                String   @id @default(uuid())
+  cronIntervalMs    Int      @default(3600000)
+  maxConcurrentJobs Int      @default(10)
+  isPaused          Boolean  @default(false)
+  updatedAt         DateTime @updatedAt
 }
 ```
 
@@ -311,3 +321,21 @@ This composite TVL is continuously tracked and cached by the backend to ensure t
 - **Unique Link Construction:** The Governor Detail Page must construct a shareable link using the `id` from the URL parameters combined with the application's base domain.
 - **Domain Configuration:** The base domain MUST be configured as a placeholder in the `package.json` under the `config.domain` property (e.g., `"config": { "domain": "https://morelikely-treasury.com" }`). This allows easy customization of the environment domain.
 - **Share Button:** A "Share Link" button MUST be displayed on the page. Clicking this button copies the fully constructed, unique URL (e.g., `https://morelikely-treasury.com/governor?id=<uuid>`) to the user's clipboard for easy sharing.
+
+---
+
+## 9. Platform Scheduler & Admin Architecture
+
+The moreLikely platform supports automated background execution of AI agents for its active subscribers. This is managed by the **Platform Scheduler** and monitored via the **Admin Dashboard**.
+
+### A. The Platform Scheduler Daemon
+The Scheduler (`agent/scheduler.ts`) is a persistent Node.js loop that automatically triggers the AI Orchestrator for platform-managed treasuries.
+1. **Filtering by Deployment Type:** The scheduler queries the database and strictly filters for `providerType === "gemini"`. Decentralized 0G network deployers and private self-hosted nodes are explicitly ignored by the platform loop (they must run their own cron jobs).
+2. **Dynamic Database Limits:** Instead of static `.env` variables, the scheduler reads its configuration (`cronIntervalMs`, `maxConcurrentJobs`, `isPaused`) from the `PlatformConfig` database table at the start of every cycle. This allows administrators to throttle or pause the entire platform in real-time without rebooting servers.
+3. **Subscription Enforcer:** Before executing a job, the scheduler instantiates the Orchestrator to check the user's on-chain `SubscriptionManager` NFT. If the NFT is transferred or expired, the scheduler immediately aborts the job to protect platform resources.
+
+### B. Admin Dashboard (Web2 SSO Authentication)
+A dedicated Next.js route at `/admin` (accessible via `https://morelikely-treasury.com/admin`) provides a real-time command center to monitor the scheduler and active treasuries.
+- **Authentication Model (Web2 SSO):** To maximize portability and security, the Admin UI is protected by standard Web2 Single Sign-On (e.g., NextAuth with Google OAuth) combined with Role-Based Access Control (RBAC), rather than relying on a Web3 EOA wallet connection. This ensures admins can securely access emergency controls from mobile devices or alternate computers without needing hardware wallets.
+- **Emergency Kill Switch:** The UI provides a master toggle mapped to the `isPaused` flag in the database, allowing an authenticated admin to instantly halt all automated LLM inferences across the platform.
+- **Open Source Security:** The Admin UI implementation is fully open-source. Security is strictly enforced by the backend API validation and the OAuth middleware, avoiding "security through obscurity" practices.

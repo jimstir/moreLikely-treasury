@@ -71,7 +71,7 @@ Each AI Governor implementation MUST consist of two distinct layers: an **Off-ch
 
 The AI Governor MUST operate via a deterministic decision loop that abstracts the underlying smart contracts from the Large Language Model (LLM). This loop consists of the following modular interfaces:
 
-1. **`IStateProvider`**: Fetches the current state of the treasury (e.g., token balances via ERC20 view functions) and current market data. It MUST cross-reference a whitelisted set of approved tokens.
+1. **`IStateProvider`**: Fetches the current state of the treasury (e.g., token balances via ERC20 view functions) and current market data. It MUST cross-reference a whitelisted set of approved tokens. Crucially, all AI tasks MUST align directly with available on-chain actions by validating the current state of the `TreasuryVault` and any active Policy contracts.
 2. **`ILLMProvider`**: Submits the state to an AI network (e.g., 0G Compute Network) for reasoning and receives a `TradeRecommendation`.
 3. **`RiskEngine`**: A deterministic ruleset that evaluates the AI's recommendation against hardcoded treasury goals (e.g., maximum allocation percentages, stop-loss limits, and slippage tolerance).
 4. **`IProposer`**: If the risk checks pass, this module MUST interact with the Open Treasury to open a formal proposal (`proposalOpen`).
@@ -80,6 +80,12 @@ The AI Governor MUST operate via a deterministic decision loop that abstracts th
 ### Agent Memory & Context
 
 To ensure continuity across autonomous operations, the AI Governor SHOULD implement a secure memory module for state retention and historical context. Without persistent memory, the agent cannot learn from past trades or avoid repeating unsuccessful strategies. This requires a decentralized, retrieveable storage solution where the agent's reasoning, rationale, and historical decisions are securely stored and rapidly indexed for future prompt injection, often utilizing dedicated Web3 memory services to preserve owner privacy and data sovereignty. For a detailed architectural implementation, refer to the [Agent Memory](./agent-memory.md) specification.
+
+### Public Standards & Private Overrides (Subscribers Only)
+
+The platform publishes an RFC-style standard document outlining default recurring rules and success/fail scenarios for each policy type (e.g., Asset Swap, Lending). 
+
+For **Platform Subscribers**, these defaults can be secretly augmented. Subscribers gain the exclusive ability to apply **Private Overrides** to these policy documents. These overrides act as trade secrets, allowing the deployer to provide the AI Governor with custom strategies, external contexts, or specialized tools without revealing them publicly to shareholders or third parties.
 
 ### Agent Funding & Security Safeguards
 
@@ -94,7 +100,19 @@ The owner MUST deploy an `AgentGasEscrow` smart contract. This contract acts as 
 #### LLM Inference Billing
 
 The backend MUST NOT hold the owner's crypto funds to pay for AI compute. 
-Instead, the AI Governor SHOULD utilize a Decentralized Ledger pattern (e.g., via the 0G Compute SDK). The treasury owner deposits tokens directly into the AI provider's on-chain billing ledger via a frontend interface. The backend is provisioned solely with an API Secret, ensuring that even in the event of a server compromise, the attacker can only exhaust the pre-funded compute budget and cannot access the owner's core funds.
+Instead, the AI Governor utilizes two distinct billing processes depending on the deployment configuration:
+
+**1. The Agentic Wallet Process (0G Network Router Approach)**
+When deployed on the 0G Compute Network, the agent uses an "Agentic Wallet". Instead of the backend codebase holding a private key and manually signing ledger transactions, the infrastructure utilizes the **Router Approach**:
+- The treasury owner deposits ZG tokens directly into the 0G Private Computer Router via a frontend interface.
+- The backend is provisioned solely with a `0G_API_KEY`.
+- The Router abstracts the on-chain ledger settlement, seamlessly mapping the API Key to the pre-funded on-chain balance. If the balance is depleted, the Router automatically rejects the inference request.
+
+**2. The Platform Smart Wallet Process (Gemini Subscription)**
+When deployed via the managed Platform Gemini LLM, inference billing is handled via a traditional Web3 subscription model rather than a per-token ledger:
+- The backend queries the on-chain `SubscriptionManager` smart contract to verify the user holds an active, unexpired subscription NFT.
+- Universal backend allowances (e.g., maximum monthly requests) are enforced natively by the Orchestrator off-chain.
+- The platform pays the underlying fiat LLM costs, and the user's on-chain subscription covers the platform fees.
 
 ### The Policy Interaction
 

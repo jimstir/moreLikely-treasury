@@ -1,0 +1,18 @@
+[
+    {
+        "timestamp": "2026-08-05T12:00:00Z",
+        "proposalId": 42,
+        "actionType": "ASSET_SWAP",
+        "marketContext": "WETH dropped 5% in 24h, high volume.",
+        "rationaleSummary": "Executed buy-the-dip strategy based on TreasuryGoal max slippage 1%. Expected short-term rebound.",
+        "outcome": "PENDING"
+    },
+    {
+        "timestamp": "2026-07-28T09:30:00Z",
+        "proposalId": 40,
+        "actionType": "LENDING",
+        "marketContext": "AAVE APY spiked to 8% for USDC.",
+        "rationaleSummary": "Reallocated capital from Compound to AAVE to capture higher yield margin.",
+        "outcome": "PROFIT"
+    }
+]

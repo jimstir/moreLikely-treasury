@@ -3,7 +3,7 @@
 import React, { useState, Suspense, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import pkg from '../../../package.json';
-import TrustProfileWidget from '../components/TrustProfileWidget';
+import TrustProfileWidget from '@/components/TrustProfileWidget';
 import { useWeb3 } from '@/context/Web3Context';
 
 function GovernorContent() {
@@ -90,6 +90,14 @@ function GovernorContent() {
             Trust Profile
           </button>
         )}
+        {id && (
+          <button 
+            style={{...styles.tab, borderBottom: activeTab === 'prompts' ? '2px solid #0070f3' : 'none', fontWeight: activeTab === 'prompts' ? 'bold' : 'normal'}}
+            onClick={() => setActiveTab('prompts')}
+          >
+            Mandate & Prompts
+          </button>
+        )}
       </div>
 
       {activeTab === 'trust' && id && vaultAddress && address && (
@@ -123,7 +131,8 @@ function GovernorContent() {
             <div style={{ display: 'flex', gap: '10px' }}>
               <select value={aiNetwork} onChange={(e) => setAiNetwork(e.target.value)} style={{...styles.input, flex: 2}}>
                 <option value="0g">0G Compute (Decentralized)</option>
-                <option value="gemini">Google Gemini (Centralized)</option>
+                <option value="gemini">Google Gemini (Platform Subscriber)</option>
+                <option value="private">Private/Self-Hosted (Manual Logging)</option>
               </select>
               
               {aiNetwork === '0g' && (
@@ -189,6 +198,22 @@ function GovernorContent() {
             </div>
           </div>
 
+          <h2 style={{fontSize: '18px', marginBottom: '16px'}}>Subscription & Compute Status</h2>
+          <div style={{display: 'flex', gap: '20px', marginBottom: '24px', flexWrap: 'wrap'}}>
+            <div style={styles.statBox}>
+              <span style={styles.statLabel}>Platform Subscription</span>
+              <span style={{ ...styles.statValue, color: 'green', fontWeight: 'bold' }}>Active (Pro Tier)</span>
+            </div>
+            <div style={styles.statBox}>
+              <span style={styles.statLabel}>Monthly Allowances Used</span>
+              <span style={styles.statValue}>142 / 1000 requests</span>
+            </div>
+            <div style={styles.statBox}>
+              <span style={styles.statLabel}>0G Network Balance</span>
+              <span style={styles.statValue}>4.52 ZG</span>
+            </div>
+          </div>
+
           <h2 style={{fontSize: '18px', marginBottom: '16px'}}>Recent Invocations & Inference Receipts</h2>
           <table style={styles.table}>
             <thead>
@@ -215,6 +240,39 @@ function GovernorContent() {
           
           <button style={{...styles.button, backgroundColor: '#dc3545', marginTop: '24px'}}>
             Emergency: Drain Smart Wallet
+          </button>
+        </div>
+      )}
+
+      {activeTab === 'prompts' && id && (
+        <div style={styles.card}>
+          <h2 style={{fontSize: '18px', marginBottom: '16px'}}>Public Treasury Mandate</h2>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Treasury Mandate (Injected into all LLM reasoning)</label>
+            <textarea 
+              style={{...styles.input, height: '100px', resize: 'vertical'}}
+              defaultValue="This treasury is focused on high-yield, risk-adjusted stablecoin farming. We do not approve speculative tokens with high volatility."
+            />
+            <p style={styles.helpText}>This public document governs the boundaries the AI must follow when opening proposals or auditing policies.</p>
+          </div>
+
+          <h2 style={{fontSize: '18px', marginBottom: '16px', marginTop: '32px'}}>Private Policy Prompts (Overrides)</h2>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Asset Swap Policy Prompt</label>
+            <textarea 
+              style={{...styles.input, height: '80px', resize: 'vertical'}}
+              defaultValue="You are the AI Treasury Governor evaluating the AssetSwapPolicy..."
+            />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Lending Policy Prompt</label>
+            <textarea 
+              style={{...styles.input, height: '80px', resize: 'vertical'}}
+              defaultValue="You are the AI Treasury Governor evaluating the LendingPolicy..."
+            />
+          </div>
+          <button style={{...styles.button, width: 'auto', padding: '10px 24px'}}>
+            Save Updates
           </button>
         </div>
       )}

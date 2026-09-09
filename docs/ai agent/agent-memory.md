@@ -79,3 +79,21 @@ Raw text consumes excess LLM context window tokens and degrades future reasoning
 ```
 
 By storing highly structured rationale summaries, the agent can efficiently query its localized Vector DB, pull the top 3 most relevant historical trades, and inject them into its active prompt without overwhelming the context limit.
+
+---
+
+## 3. Log Storage & Social Transparency
+
+The platform categorizes log storage based on the deployment type of the AI Governor:
+
+*   **Platform Subscribers (Gemini):** Logs and agent reasoning are stored automatically in the platform's database.
+*   **0G Network:** Logs are retrieved dynamically via receipts. The platform frontend/backend uses the 0G Storage SDK to query the network directly.
+*   **Private Providers:** Logs are completely external. Private providers will not be able to share logs automatically for this version of the platform. 
+
+### Social Transparency is the Web3 Standard
+In almost all current DAOs, the "why" behind a proposal is discussed off-chain anyway (e.g., in a Discord channel or forum). If a Treasury Owner is running a private AI agent, it is ultimately their responsibility to maintain trust with their shareholders. 
+
+If the shareholders demand to see the agent's reasoning, the Owner can simply:
+1. Export the log file from their local machine.
+2. Post it to the community's Reddit, Discord, Discourse forum, or Notion board.
+3. Link to the on-chain transaction hash for proof.

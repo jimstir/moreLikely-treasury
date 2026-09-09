@@ -20,18 +20,20 @@ export interface TreasuryGoals {
     stopLossPercent: { [token: string]: number };
 }
 
-export interface TradeRecommendation {
-    recommendTrade: boolean;
-    tokenIn: string;
-    tokenOut: string;
-    amountIn: string;
+export interface PolicyActionRecommendation {
+    recommendAction: boolean;
+    actionType: "ASSET_SWAP" | "LENDING" | "NONE";
+    tokenIn?: string;
+    tokenOut?: string;
+    amountIn?: string;
+    targetPool?: string; // For lending rebalancing
     rationale: string;
 }
 
 export interface IAIAgent {
     monitorState(vaultAddress: string): Promise<TreasuryState>;
-    evaluate(state: TreasuryState, marketData: MarketData): Promise<TradeRecommendation>;
-    execute(recommendation: TradeRecommendation): Promise<string>;
+    evaluate(state: TreasuryState, marketData: MarketData): Promise<PolicyActionRecommendation>;
+    execute(recommendation: PolicyActionRecommendation): Promise<string>;
 }
 
 export interface InferenceResult {

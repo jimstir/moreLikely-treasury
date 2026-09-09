@@ -45,6 +45,7 @@ model TreasuryGoals {
   treasuryId            String   @unique
   treasury              Treasury @relation(fields: [treasuryId], references: [id], onDelete: Cascade)
   mandate               String?  @default("No specific mandate provided.") // Shareholder goals for AI to evaluate against
+  privateOverrides      Json?    // e.g. { "assetSwap": "Custom override prompt" }
   slippageLimit         Float    @default(0.5) // e.g. 0.5%
   stopLoss              Float    @default(5.0) // e.g. 5.0%
   maxTreasuryPercentage Float    @default(10.0) // max size of a single trade (e.g. 10.0%)
@@ -141,3 +142,10 @@ model TrustProfile {
   @@unique([walletAddress, treasuryId])
 }
 
+model PlatformConfig {
+  id                String   @id @default(uuid())
+  cronIntervalMs    Int      @default(3600000)
+  maxConcurrentJobs Int      @default(10)
+  isPaused          Boolean  @default(false)
+  updatedAt         DateTime @updatedAt
+}
