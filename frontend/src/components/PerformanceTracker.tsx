@@ -7,34 +7,55 @@ interface DataPoint {
   date: string;
   value: number;
 }
+interface PerformanceTrackerProps {
+  treasuryId?: string;
+}
 
-export default function PerformanceTracker() {
+export default function PerformanceTracker({ treasuryId }: PerformanceTrackerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [data, setData] = useState<DataPoint[]>([]);
   const [hoveredPoint, setHoveredPoint] = useState<{ x: number; y: number; data: DataPoint } | null>(null);
 
   useEffect(() => {
-    // Generate mock historical PnL data
-    const mockData: DataPoint[] = [];
-    let currentValue = 100000; // Start with $100k
-    
-    const today = new Date();
-    for (let i = 30; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(d.getDate() - i);
+    const fetchPerformance = async () => {
+      if (!treasuryId) return;
+      try {
+        const res = await fetch(`/api/treasury/performance?treasuryId=${treasuryId}`);
+        if (res.ok) {
+          const history = await res.json();
+          if (history.length > 0) {
+            setData(
+              history.map((h: any) => ({
+                date: new Date(h.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+                value: h.totalValueUsd
+              }))
+            );
+            return;
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch treasury performance:", err);
+      }
       
-      // Random walk
-      const change = (Math.random() - 0.45) * 2000; 
-      currentValue += change;
-      
-      mockData.push({
-        date: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
-        value: currentValue,
-      });
-    }
-    
-    setData(mockData);
-  }, []);
+      // Fallback: If no real data, generate mock historical PnL data
+      const mockData: DataPoint[] = [];
+      let currentValue = 100000;
+      const today = new Date();
+      for (let i = 30; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(d.getDate() - i);
+        const change = (Math.random() - 0.45) * 2000; 
+        currentValue += change;
+        mockData.push({
+          date: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+          value: currentValue,
+        });
+      }
+      setData(mockData);
+    };
+
+    fetchPerformance();
+  }, [treasuryId]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

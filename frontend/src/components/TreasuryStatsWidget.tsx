@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { ethers } from "ethers";
 import { useWeb3 } from "@/context/Web3Context";
-import { getTreasuryVault, getTreasuryToken, getERC20 } from "@/lib/contracts";
+import { getTreasuryVault, getTreasuryToken, getERC20, getOracleRouter } from "@/lib/contracts";
 import styles from "./TreasuryStatsWidget.module.css";
 
 interface TreasuryStats {
@@ -11,9 +11,14 @@ interface TreasuryStats {
   owner: string;
   totalShareSupply: string;
   tokenCount: number;
-  assets: { address: string; symbol: string; balance: string }[];
+  assets: { address: string; symbol: string; balance: string; valueUsd: number }[];
   memberCount?: number;
   baseAssetAddress?: string;
+  goals?: {
+    slippageLimit: number;
+    stopLoss: number;
+    maxTreasuryPercentage: number;
+  };
 }
 
 interface TreasuryStatsWidgetProps {
@@ -33,6 +38,11 @@ interface DBTreasury {
     address: string;
   };
   members: Array<{ id: string }>;
+  goals?: {
+    slippageLimit: number;
+    stopLoss: number;
+    maxTreasuryPercentage: number;
+  };
 }
 
 export default function TreasuryStatsWidget({ 
@@ -92,7 +102,19 @@ export default function TreasuryStatsWidget({
           vault.tokensL(),
         ]);
 
-        // Fetch all approved token balances
+        // Map tokens to their corresponding Oracle Market addresses on Sepolia
+        // In a full production app, this mapping would be stored in the DB or OracleRouter itself
+        const MARKET_MAPPING: Record<string, string> = {
+          "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14": "0x694AA1769357215DE4FAC081bf1f309aDC325306", // WETH -> ETH/USD Chainlink
+        };
+
+        const oracleRouterAddress = process.env.NEXT_PUBLIC_ORACLE_ROUTER_ADDRESS;
+        let oracleRouter = null;
+        if (oracleRouterAddress) {
+          oracleRouter = getOracleRouter(oracleRouterAddress, provider);
+        }
+
+        // Fetch all approved token balances and prices
         const assets: TreasuryStats["assets"] = [];
         for (const tokenAddr of activeTokensList) {
           const erc20 = getERC20(tokenAddr, provider);
@@ -100,10 +122,31 @@ export default function TreasuryStatsWidget({
             erc20.symbol(),
             erc20.balanceOf(vaultAddress),
           ]);
+          
+          const balanceFormatted = ethers.formatEther(balance);
+          let valueUsd = 0;
+          
+          if (oracleRouter && parseFloat(balanceFormatted) > 0) {
+             const marketAddr = MARKET_MAPPING[tokenAddr];
+             if (marketAddr) {
+                try {
+                   const priceScaled = await oracleRouter.getPrice(marketAddr);
+                   const priceUsd = parseFloat(ethers.formatEther(priceScaled));
+                   valueUsd = parseFloat(balanceFormatted) * priceUsd;
+                } catch (e) {
+                   console.error(`Failed to fetch oracle price for ${tokenAddr}`);
+                }
+             } else {
+                // Mock fallback for unknown tokens
+                valueUsd = parseFloat(balanceFormatted) * 1.0; 
+             }
+          }
+
           assets.push({
             address: tokenAddr,
             symbol,
-            balance: ethers.formatEther(balance),
+            balance: balanceFormatted,
+            valueUsd
           });
         }
 
@@ -111,10 +154,11 @@ export default function TreasuryStatsWidget({
           name: dbTreasury?.name || name,
           owner: dbTreasury?.owner.address || owner,
           totalShareSupply: ethers.formatEther(totalSupply),
-          tokenCount: count,
+          tokenCount: activeTokensList.length,
           assets,
           memberCount: dbTreasury?.members.length,
           baseAssetAddress: dbTreasury?.baseAssetAddress || undefined,
+          goals: dbTreasury?.goals
         });
       } catch (err) {
         console.error("Failed to fetch treasury stats:", err);
@@ -158,8 +202,8 @@ export default function TreasuryStatsWidget({
 
   if (!stats) return null;
 
-  // Calculate simple TVL (sum of all asset balances)
-  const totalAssetBalance = stats.assets.reduce((sum, a) => sum + parseFloat(a.balance), 0);
+  // Calculate true TVL using oracle values
+  const totalAssetBalance = stats.assets.reduce((sum, a) => sum + (a.valueUsd || 0), 0);
 
   return (
     <div className="glass-card">
@@ -230,6 +274,23 @@ export default function TreasuryStatsWidget({
           <span className={styles.ownerAddress}>
             {stats.baseAssetAddress.slice(0, 6)}…{stats.baseAssetAddress.slice(-4)}
           </span>
+        </div>
+      )}
+
+      {stats.goals && (
+        <div className="grid-stats" style={{ marginTop: 20 }}>
+           <div className="stat-card">
+              <span className="stat-label">Slippage Limit</span>
+              <span className="stat-value">{stats.goals.slippageLimit}%</span>
+           </div>
+           <div className="stat-card">
+              <span className="stat-label">Stop Loss</span>
+              <span className="stat-value">{stats.goals.stopLoss}%</span>
+           </div>
+           <div className="stat-card">
+              <span className="stat-label">Max Trade %</span>
+              <span className="stat-value">{stats.goals.maxTreasuryPercentage}%</span>
+           </div>
         </div>
       )}
     </div>

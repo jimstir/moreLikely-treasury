@@ -63,6 +63,11 @@ export const ERC20_ABI = [
   "function transfer(address to, uint256 amount) returns (bool)",
 ];
 
+// ─── OracleRouter ABI ───
+export const ORACLE_ROUTER_ABI = [
+  "function getPrice(address _market) external view returns (uint256)",
+];
+
 // ─── Factory Functions ───
 
 export function getTreasuryVault(address: string, signerOrProvider: ethers.Signer | ethers.Provider) {
@@ -79,4 +84,8 @@ export function getAssetSwapPolicy(address: string, signerOrProvider: ethers.Sig
 
 export function getERC20(address: string, signerOrProvider: ethers.Signer | ethers.Provider) {
   return new ethers.Contract(address, ERC20_ABI, signerOrProvider);
+}
+
+export function getOracleRouter(address: string, signerOrProvider: ethers.Signer | ethers.Provider) {
+  return new ethers.Contract(address, ORACLE_ROUTER_ABI, signerOrProvider);
 }

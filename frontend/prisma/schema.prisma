@@ -38,6 +38,7 @@ model Treasury {
   goals           TreasuryGoals?
   proposals       Proposal[]
   trustProfiles   TrustProfile[]
+  performances    TreasuryPerformance[]
 }
 
 model TreasuryGoals {
@@ -53,6 +54,17 @@ model TreasuryGoals {
   dataSources           String   @default("") // Comma-separated list of approved web/news feeds
   disputePeriodSeconds  Int      @default(86400) // Default 24 hours review delay
   updatedAt             DateTime @updatedAt
+}
+
+model TreasuryPerformance {
+  id              String   @id @default(uuid())
+  treasuryId      String
+  treasury        Treasury @relation(fields: [treasuryId], references: [id], onDelete: Cascade)
+  date            DateTime @db.Date
+  totalValueUsd   Float
+  createdAt       DateTime @default(now())
+
+  @@unique([treasuryId, date])
 }
 
 model TreasuryMember {
