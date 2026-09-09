@@ -1,0 +1,26 @@
+==================================================
+LIVE UNISWAP SEPOLIA FORK SWAP RESULTS (WETH -> USDC)
+Timestamp: 2026-08-22T12:38:47.587Z
+Universal Router: 0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E
+WETH Token (In): 0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14
+USDC Token (Out): 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238
+==================================================
+
+BALANCE SHEET COMPARISON (BEFORE vs AFTER):
+
+TreasuryVault (0x...):
+  - WETH Balance:
+      * Before: 0.0005 WETH
+      * After:  0.0005 WETH
+  - USDC Balance:
+      * Before: 0.0 USDC
+      * After:  0.0 USDC
+
+AssetSwapPolicy (0x...):
+  - WETH Balance:
+      * Before: 0.0005 WETH
+      * After:  0.0005 WETH
+  - USDC Balance:
+      * Before: 0.0 USDC
+      * After:  10.741389 USDC (Received swapped funds!)
+

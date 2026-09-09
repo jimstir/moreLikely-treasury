@@ -1,6 +1,6 @@
 # Frontend UI Components Architecture
 
-This document outlines the architecture and data integration flow for the moreLikely Smart Treasury frontend UI components. The UI is built using Next.js (App Router), React, and ethers.js to provide a rich, glassmorphic dashboard for treasury management.
+This document outlines the architecture and data integration flow.
 
 ## 1. Data Layers
 

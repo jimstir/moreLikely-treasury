@@ -1,0 +1,44 @@
+◇ injected env (0) from .env // tip: ⌘ override existing { override: true }
+
+
+  Treasury deployment and view functions
+    1) deploys TreasuryToken and TreasuryVault and links them on-chain
+    ✔ returns the connected signer as owner through TreasuryVault view functions (13223ms)
+view: vaultOwner= 0x4CCC2622983D7a7fE6B21D5c042b2A06D18cC4Cc
+view: treasuryName= moreLikely Treasury
+view: vaultTokenAddress= 0x3598968BA45Af36E6Ca961e47b9f29afE4e19a32
+view: tokenVaultAddress= 0x0000000000000000000000000000000000000000
+view: proposalCount= 0
+view: tokenApproved= false
+    2) calls several TreasuryVault and TreasuryToken view functions and logs the returned values
+
+
+  1 passing (1m)
+  2 failing
+
+  1) Treasury deployment and view functions
+       deploys TreasuryToken and TreasuryVault and links them on-chain:
+
+      AssertionError: expected '0x0000000000000000000000000000000000000000' to equal '0x285E9825b9C68B0c4d87574E357f79Db5Bb3fdB2'.
+      + expected - actual
+
+      -0x0000000000000000000000000000000000000000
+      +0x285E9825b9C68B0c4d87574E357f79Db5Bb3fdB2
+      
+      at Context.<anonymous> (test/deployment.test.ts:44:34)
+      at processTicksAndRejections (node:internal/process/task_queues:95:5)
+
+  2) Treasury deployment and view functions
+       calls several TreasuryVault and TreasuryToken view functions and logs the returned values:
+
+      AssertionError: expected '0x0000000000000000000000000000000000000000' to equal '0x0e48CE66b5F08dEF2bf10B7570d0E60A49734f1f'.
+      + expected - actual
+
+      -0x0000000000000000000000000000000000000000
+      +0x0e48CE66b5F08dEF2bf10B7570d0E60A49734f1f
+      
+      at Context.<anonymous> (test/deployment.test.ts:95:34)
+      at processTicksAndRejections (node:internal/process/task_queues:95:5)
+
+
+
