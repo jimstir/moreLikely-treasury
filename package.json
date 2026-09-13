@@ -43,6 +43,7 @@
     "@0gfoundation/0g-storage-ts-sdk": "^1.2.10",
     "@chainlink/contracts": "^1.4.0",
     "@circle-fin/developer-controlled-wallets": "^10.6.0",
+    "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^5.22.0",
     "@uniswap/sdk-core": "^7.19.1",
     "@uniswap/smart-order-router": "^4.31.10",

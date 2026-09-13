@@ -168,6 +168,26 @@ sequenceDiagram
 - The `AuditInteractionsWidget` displays these tickets. If the inputs in the ticket do not match live market data, or if the agent acted outside the parameters defined by `TreasuryGoals`, stakeholders can flag it.
 - **On-Chain Pause**: If a dispute is reported, a stakeholder can call `triggerDispute(proposalId)` on the `AssetSwapPolicy.sol` contract. This is a public function that requires the caller to hold a minimum percentage of `TreasuryToken` shares (e.g. >1%). Calling it flags the proposal as `disputed` on-chain and pauses execution for a set cooldown period (`disputePeriodSeconds`).
 
+### C. Treasury Document Architecture (Mandates & Prompts)
+To ensure transparency and modularity, treasury rules and AI instructions (like the Treasury Mandate, Trust Profile prompts, and Policy prompts) are stored as standard Markdown (`.md`) files containing embedded JSON key-value pairs, rather than standard database strings. 
+
+1. **Default Templates & Generation:** 
+   Files are strictly generated (meaning the platform's default template is copied and explicitly tied to an entity) conditionally:
+   - `treasury-mandate.md`: Generated when the `TreasuryVault` contract is deployed.
+   - `trust-profile-prompt.md`: Generated only when a user deploys an AI Governor to conduct trust profile tasks (e.g., as a subscriber on the 0G network).
+   - Policy Prompts (`asset-swap-prompt.md`): Generated only when the specific policy contract is deployed on-chain.
+2. **Dual-Mode Storage:**
+   - **Mode A (Platform DB MVP):** Files are stored on standard cloud storage. The database tracks the file URI, a SHA-256 hash, and a timestamp. 
+   - **Mode B (0G Network):** If the user utilizes the 0G network, they submit the generated file directly to 0G Storage using their own balance. The platform database only stores the 0G Content Identifier.
+3. **Cryptographic Signatures (Off-Chain Integrity):**
+   To prevent "he-said-she-said" scenarios without incurring on-chain gas costs, every file version is hashed (SHA-256) and cryptographically signed (EIP-712). Default templates are signed by the Platform Admin Wallet. Any user/owner edits are signed by the editor's wallet. Users can download the `.md` file, hash it locally, and verify the signature to ensure authenticity.
+4. **The "Private Override" State:**
+   There is no separate "private override" file. Every `.md` file begins as a public default. If the Treasury Owner edits a file (e.g., adding a secret trading parameter to the Swap Policy prompt) and chooses to hide those edits from shareholders, that specific file enters a **Private Override** state. The database pointer tracks this visibility.
+6. **UI Editing & Validation (MVP):**
+   To maximize simplicity for users, the frontend displays the `.md` files inside a standard HTML `<textarea>`. Users can read the JSON configuration blocks at the top and type their plain-text updates in the "Owner Justifications" section at the bottom without needing to learn Markdown.
+   - **Save & Validation:** When the user clicks "Save", the backend runs a strict `JSON.parse()` extraction on the JSON code blocks (e.g., `targetAllocations`, `slippageLimit`) before accepting the file. If a non-technical user accidentally deleted a bracket `}`, the backend rejects the save and returns a formatting error to the UI.
+   - **Signature Execution:** If the `JSON.parse` passes, the frontend prompts the user's wallet to EIP-712 sign the new file hash. The backend then saves the updated file (and signature) as a Private Override or Public Edit based on the user's toggle.
+
 ---
 
 ## 3. API Contracts

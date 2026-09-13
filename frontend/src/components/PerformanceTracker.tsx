@@ -37,18 +37,19 @@ export default function PerformanceTracker({ treasuryId }: PerformanceTrackerPro
         console.error("Failed to fetch treasury performance:", err);
       }
       
-      // Fallback: If no real data, generate mock historical PnL data
+      // Fallback: If no real data, generate mock historical token flow
       const mockData: DataPoint[] = [];
-      let currentValue = 100000;
+      let tokensAccumulated = 0;
       const today = new Date();
       for (let i = 30; i >= 0; i--) {
         const d = new Date(today);
         d.setDate(d.getDate() - i);
-        const change = (Math.random() - 0.45) * 2000; 
-        currentValue += change;
+        // Simulate token flow (positive bias for accumulation)
+        const change = (Math.random() - 0.4) * 50; 
+        tokensAccumulated += change;
         mockData.push({
           date: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
-          value: currentValue,
+          value: tokensAccumulated,
         });
       }
       setData(mockData);
@@ -104,7 +105,7 @@ export default function PerformanceTracker({ treasuryId }: PerformanceTrackerPro
       ctx.textAlign = "right";
       ctx.textBaseline = "middle";
       const val = maxVal - (i / 4) * valRange;
-      ctx.fillText(`$${(val / 1000).toFixed(1)}k`, padding.left - 10, y);
+      ctx.fillText(`${(val).toFixed(1)} TKN`, padding.left - 10, y);
     }
     ctx.stroke();
 
@@ -200,11 +201,11 @@ export default function PerformanceTracker({ treasuryId }: PerformanceTrackerPro
       <div className={styles.header}>
         <div>
           <h3>Performance</h3>
-          <p className={styles.subtitle}>30-Day Historical PnL</p>
+          <p className={styles.subtitle}>30-Day Net Token Flow</p>
         </div>
         <div className={styles.stats}>
           <span className={styles.currentValue}>
-            ${currentVal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+            {currentVal.toLocaleString(undefined, { maximumFractionDigits: 2 })} TKNs
           </span>
           <span className={`badge ${isPositive ? 'badge-success' : 'badge-danger'}`}>
             {isPositive ? '+' : ''}{percentChange.toFixed(2)}%
@@ -236,7 +237,7 @@ export default function PerformanceTracker({ treasuryId }: PerformanceTrackerPro
             >
               <div className={styles.tooltipDate}>{hoveredPoint.data.date}</div>
               <div className={styles.tooltipValue}>
-                ${hoveredPoint.data.value.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                {hoveredPoint.data.value.toLocaleString(undefined, { maximumFractionDigits: 2 })} TKNs
               </div>
             </div>
             <div 

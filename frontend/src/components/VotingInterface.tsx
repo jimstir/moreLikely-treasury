@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ethers } from "ethers";
 import { useWeb3 } from "@/context/Web3Context";
 import styles from "./VotingInterface.module.css";
@@ -14,12 +14,38 @@ export default function VotingInterface({ proposalId, vaultAddress }: VotingInte
   const { provider, signer, address, chainId } = useWeb3();
   const [voteStatus, setVoteStatus] = useState<"idle" | "signing" | "submitting" | "success" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
-  const [mockVotesFor, setMockVotesFor] = useState(15000);
-  const [mockVotesAgainst, setMockVotesAgainst] = useState(2500);
+  
+  // Real data state
+  const [votesFor, setVotesFor] = useState(BigInt(0));
+  const [votesAgainst, setVotesAgainst] = useState(BigInt(0));
 
-  const totalVotes = mockVotesFor + mockVotesAgainst;
-  const percentFor = totalVotes > 0 ? (mockVotesFor / totalVotes) * 100 : 0;
-  const percentAgainst = totalVotes > 0 ? (mockVotesAgainst / totalVotes) * 100 : 0;
+  useEffect(() => {
+    async function fetchVotes() {
+      if (!provider || !vaultAddress) return;
+      try {
+        const vaultAbi = [
+          "function getProposalVotes(uint256 proposalId) view returns (uint256 forVotes, uint256 againstVotes)"
+        ];
+        const vaultContract = new ethers.Contract(vaultAddress, vaultAbi, provider);
+        // Note: Assuming a getter exists. If the contract tracks this natively, we fetch it.
+        // If the contract does not have getProposalVotes, we might need to read events or off-chain state.
+        // Assuming offchain DB API fallback if not on-chain:
+        const response = await fetch(`/api/voting/stats?proposalId=${proposalId}`);
+        if (response.ok) {
+           const data = await response.json();
+           setVotesFor(BigInt(data.forVotes));
+           setVotesAgainst(BigInt(data.againstVotes));
+        }
+      } catch (e) {
+        console.error("Failed to fetch votes", e);
+      }
+    }
+    fetchVotes();
+  }, [provider, vaultAddress, proposalId]);
+
+  const totalVotes = Number(ethers.formatEther(votesFor + votesAgainst));
+  const percentFor = totalVotes > 0 ? (Number(ethers.formatEther(votesFor)) / totalVotes) * 100 : 0;
+  const percentAgainst = totalVotes > 0 ? (Number(ethers.formatEther(votesAgainst)) / totalVotes) * 100 : 0;
 
   const handleVote = async (support: boolean) => {
     if (!signer || !address || !chainId) return;
@@ -67,8 +93,8 @@ export default function VotingInterface({ proposalId, vaultAddress }: VotingInte
       });
 
       // Optimistically update mock UI
-      if (support) setMockVotesFor((prev) => prev + 1000); // Mock 1000 shares
-      else setMockVotesAgainst((prev) => prev + 1000);
+      if (support) setVotesFor((prev) => prev + ethers.parseEther("1000")); // Mock 1000 shares
+      else setVotesAgainst((prev) => prev + ethers.parseEther("1000"));
 
       setVoteStatus("success");
     } catch (err: any) {

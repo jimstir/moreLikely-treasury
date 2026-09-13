@@ -92,7 +92,7 @@ export class PlatformScheduler {
             await orchestrator.initializeChecks(treasury.ownerAddress);
             
             // If we reach here, user is a valid active subscriber.
-            await orchestrator.runAgentLoop();
+            await orchestrator.runAgentLoop("Analyze treasury state and execute actions based on the mandate if necessary.");
         } catch (error: any) {
             console.error(`[Scheduler] Failed to process treasury ${treasury.id}: ${error.message}`);
             // Logic to mark treasury as inactive or notify user goes here

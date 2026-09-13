@@ -117,6 +117,14 @@ NEXT_PUBLIC_ORACLE_ROUTER_ADDRESS=""
 Additionally, if running the frontend, create a `frontend/.env` file:
 ```env
 NEXT_PUBLIC_DEPLOY_NETWORK="testnet"
+
+# 5. NextAuth Configuration (Required for Admin Portal)
+# Generate a secret via: openssl rand -base64 32
+NEXTAUTH_SECRET="your_nextauth_secret_here"
+NEXTAUTH_URL="http://localhost:3000"
+# (Optional) Add your preferred OAuth provider here (e.g. Google/GitHub)
+# GOOGLE_CLIENT_ID=""
+# GOOGLE_CLIENT_SECRET=""
 ```
 
 ## Running Tests

@@ -13,6 +13,10 @@ interface FormData {
   treasuryName: string;
   tokenName: string;
   tokenSymbol: string;
+  treasuryNetworkId: string;
+  joinTokenAddress: string;
+  aiNetwork: string;
+  aiModel: string;
 }
 
 interface ValidationErrors {
@@ -183,12 +187,12 @@ export default function CreateTreasuryWidget({ onCreated }: CreateTreasuryWidget
       const vaultAddress = await vaultContract.getAddress();
 
       setDeployStatus("Linking TreasuryToken and TreasuryVault…");
-      const linkTx = await tokenContract.setVault(vaultAddress);
+      const linkTx = await (tokenContract as any).setVault(vaultAddress);
       await linkTx.wait();
 
       if (formData.joinTokenAddress?.trim()) {
         setDeployStatus("Approving Join Token…");
-        const approveTx = await vaultContract.newToken(formData.joinTokenAddress.trim());
+        const approveTx = await (vaultContract as any).newToken(formData.joinTokenAddress.trim());
         await approveTx.wait();
       }
 

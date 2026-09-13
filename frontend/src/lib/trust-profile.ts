@@ -117,7 +117,7 @@ async function attr2_tokenAddControl(
       tok.balanceOf(owner),
     ]);
 
-    if (supply === 0n) {
+    if (supply === BigInt(0)) {
       return {
         id: 2, title: "Token Add Control", severity: "warning",
         score: sev2score("warning"),
@@ -126,7 +126,7 @@ async function attr2_tokenAddControl(
       };
     }
 
-    const ownerBps = (bal * 10000n) / supply;
+    const ownerBps = (bal * BigInt(10000)) / supply;
     const canPass = ownerBps >= votingThres;
     const severity: Severity = canPass ? "critical" : "safe";
     const ownerPct = (Number(ownerBps) / 100).toFixed(1);
@@ -321,7 +321,7 @@ async function attr7_unapprovedTokens(
     for (const token of tokens) {
       try {
         const pid = await getProposalId(token);
-        if (pid === 0n) continue;
+        if (pid === BigInt(0)) continue;
         const p = await vault.proposalBook(pid);
         const closed = await vault.closedProposals(pid);
         if (closed && !p.executed) {

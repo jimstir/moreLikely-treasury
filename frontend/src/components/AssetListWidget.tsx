@@ -9,10 +9,6 @@ interface AssetData {
   address: string;
   symbol: string;
   balance: string;
-  // Mock data for live metrics
-  price: number;
-  liquidity: string;
-  holders: number;
 }
 
 interface AssetListWidgetProps {
@@ -43,19 +39,10 @@ export default function AssetListWidget({ vaultAddress }: AssetListWidgetProps) 
             erc20.balanceOf(vaultAddress),
           ]);
           
-          // Mock market data for demonstration
-          // In production, this would query Uniswap/CoinGecko API
-          const mockPrice = Math.random() * 2000 + 1; // $1 to $2001
-          const mockLiquidity = (Math.random() * 50 + 1).toFixed(2) + "M";
-          const mockHolders = Math.floor(Math.random() * 50000) + 1000;
-
           fetchedAssets.push({
             address: tokenAddr,
             symbol,
-            balance: ethers.formatEther(balance),
-            price: mockPrice,
-            liquidity: mockLiquidity,
-            holders: mockHolders,
+            balance: ethers.formatEther(balance)
           });
         }
         
@@ -79,13 +66,11 @@ export default function AssetListWidget({ vaultAddress }: AssetListWidgetProps) 
     );
   }
 
-  const totalValue = assets.reduce((sum, a) => sum + parseFloat(a.balance) * a.price, 0);
-
   return (
     <div className="glass-card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <h3>Treasury Assets</h3>
-        <span className="badge badge-success">Live Market Data</span>
+        <span className="badge badge-success">On-Chain Balances</span>
       </div>
 
       {assets.length === 0 ? (
@@ -97,50 +82,22 @@ export default function AssetListWidget({ vaultAddress }: AssetListWidgetProps) 
               <tr>
                 <th>Asset</th>
                 <th>Balance</th>
-                <th>Price (USD)</th>
-                <th>Value</th>
-                <th>Allocation</th>
-                <th>Market Liq.</th>
-                <th>Holders</th>
               </tr>
             </thead>
             <tbody>
-              {assets.map((asset) => {
-                const value = parseFloat(asset.balance) * asset.price;
-                const allocation = totalValue > 0 ? (value / totalValue) * 100 : 0;
-                
-                return (
-                  <tr key={asset.address}>
-                    <td>
-                      <div style={{ display: "flex", flexDirection: "column" }}>
-                        <span style={{ fontWeight: 600, color: "var(--accent-blue-light)" }}>{asset.symbol}</span>
-                        <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "monospace" }}>
-                          {asset.address.slice(0, 6)}…{asset.address.slice(-4)}
-                        </span>
-                      </div>
-                    </td>
-                    <td>{parseFloat(asset.balance).toFixed(4)}</td>
-                    <td>${asset.price.toFixed(2)}</td>
-                    <td style={{ fontWeight: 600 }}>${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                    <td style={{ minWidth: 120 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
-                        <span>{allocation.toFixed(1)}%</span>
-                        <div className="progress" style={{ flex: 1 }}>
-                          <div 
-                            className="progress-fill" 
-                            style={{ 
-                              width: `${allocation}%`,
-                              background: allocation > 50 ? "var(--gradient-success)" : "var(--gradient-accent)"
-                            }} 
-                          />
-                        </div>
-                      </div>
-                    </td>
-                    <td>${asset.liquidity}</td>
-                    <td>{asset.holders.toLocaleString()}</td>
-                  </tr>
-                );
-              })}
+              {assets.map((asset) => (
+                <tr key={asset.address}>
+                  <td>
+                    <div style={{ display: "flex", flexDirection: "column" }}>
+                      <span style={{ fontWeight: 600, color: "var(--accent-blue-light)" }}>{asset.symbol}</span>
+                      <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "monospace" }}>
+                        {asset.address.slice(0, 6)}…{asset.address.slice(-4)}
+                      </span>
+                    </div>
+                  </td>
+                  <td>{parseFloat(asset.balance).toFixed(4)}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

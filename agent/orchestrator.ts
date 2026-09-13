@@ -40,16 +40,34 @@ export class Orchestrator {
         }
     }
 
-    public async runAgentLoop(): Promise<void> {
+    public async runAgentLoop(prompt: string): Promise<any> {
         console.log(`[Orchestrator] Running agent execution loop for provider: ${this.providerType}`);
-        // 1. Build Context (query smart contracts & DB for limits/prices)
-        // 2. Invoke LLM via selected provider adapter
-        // 3. Risk checks via Executor (returns safely mapped action)
-        // 4. Dispatch transaction to Circle or Local Wallet
         
-        // Mocking execution duration
-        await new Promise(resolve => setTimeout(resolve, 500));
+        let adapter: any;
+        if (this.providerType === ProviderType.GEMINI_SUBSCRIBER) {
+            const { GeminiAdapter } = await import("./adapters/gemini");
+            adapter = new GeminiAdapter(process.env.GEMINI_API_KEY || "");
+        } else if (this.providerType === ProviderType.ZERO_G) {
+            const { ZeroGAdapter } = await import("./adapters/0g");
+            adapter = new ZeroGAdapter(process.env.ZEROG_COMPUTE_API_KEY || "");
+        } else if (this.providerType === ProviderType.PRIVATE) {
+            const { PrivateHostAdapter } = await import("./adapters/private");
+            adapter = new PrivateHostAdapter(process.env.PRIVATE_BASE_URL || "http://127.0.0.1:11434/v1");
+        } else {
+            throw new Error("Unknown provider type");
+        }
+
+        // 1. Build Context (query smart contracts & DB for limits/prices)
+        // (Handled outside or by prompt passing for now)
+        
+        // 2. Invoke LLM via selected provider adapter
+        const result = await adapter.requestInference(prompt);
+        console.log(`[Orchestrator] Inference completed. Text length: ${result.textResponse.length}, Tool calls: ${result.toolCalls?.length}`);
+
+        // 3. Risk checks & Tool Execution would happen here via runner.ts
+        
         console.log(`[Orchestrator] Agent loop complete.`);
+        return result;
     }
 
     private async checkOnChainSubscription(userAddress: string): Promise<boolean> {

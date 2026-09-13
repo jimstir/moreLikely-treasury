@@ -292,7 +292,7 @@ Regardless of the agent's reasoning, the smart contracts enforce hard safety rul
 
 The agent cannot bypass these on-chain checks. The tools are the agent's interface to the world; the contracts are the world's guardrails on the agent.
 
-### Audit Components (Trusy Profile)
+### Audit Components (Trust Profile)
 
 **Component:** `AuditInteractionsWidget`
 - **Trigger:** Stakeholder runs public attirbute audit.
@@ -305,14 +305,6 @@ The agent cannot bypass these on-chain checks. The tools are the agent's interfa
   - On-chain dispute transaction pauses voting progress and blocks execution signatures.
   - Enforces a review cooldown window (defined in goals) allowing the owner or DAO to review the disputed proposal.
 
-  **Components** `Deposit Token Audit` 
-  The UI SHOULD include an audit or warning system that evaluates the treasury's accepted deposit tokens by calling getApprovedTokens(). 
-  - The UI will display the security of the treasury's accepted tokens.
-  **Action:**
-  - Stakeholder views and monitors the current list of approved tokens.
-  **Minor Warning Metric**: If a treasury accepts multiple tokens with different fiat values (e.g., accepting both USDC and a volatile asset, or even USDC and a different fiat-pegged stablecoin), the UI MUST display a severe warning.
-
-
 #### Trust Profile
 
 The UI MUST compile a Trust Profile of the treasury and display it transparently to stakeholders before they interact with the platform. To prevent "false positives" penalizing normal treasury delays, the Trust Profile is divided into two layers:
@@ -324,20 +316,66 @@ The UI MUST compile a Trust Profile of the treasury and display it transparently
 This profile is evaluated using the following criteria:
 
 1.  **Owner Governance Override:** The Treasury Owner has the administrative rights to unilaterally close policies and recall funds early to protect the treasury in volatile markets (via `proposalClose()`).
+    *   **AI Governor Reasoning:** The AI should evaluate the context of the closures. Are they justified protective measures against sudden market crashes, or does the frequency indicate erratic, centralized interference that overrides legitimate DAO decisions?
+    *   **Audit Getter Dependency:** Relies on **Component #2 (`AuditInteractionsWidget`)** -> `proposalBook(uint256)` to count historical `CLOSE` proposals initiated by the owner.
+    *   **Required LLM Context Data (JSON):** To accurately evaluate this attribute, the backend MUST provide the following deterministic data payload to the LLM:
+    ```json
+    {
+      "layer1Metrics": {
+        "totalProposalsCreated": "number",
+        "totalProposalsClosedByOwner": "number",
+        "averageProposalDurationSeconds": "number"
+      },
+      "recentEvents": [
+        {
+          "proposalId": "string",
+          "closureType": "owner_override | scheduled_end",
+          "originalProposalTerms": {
+            "scheduledCloseDate": "timestamp | null",
+            "strategyType": "string"
+          },
+          "timeOpenBeforeClosureSeconds": "number",
+          "marketSnapshotAtClosure": {
+            "blockTimestamp": "number",
+            "assetPrices": {
+              "tokenA": "price",
+              "tokenB": "price"
+            }
+          }
+        }
+      ]
+    }
+    ```
 2.  **Token Add Control:** The owner could use `ADD_TOKEN` proposals. The UI must evaluate if the owner holds enough voting power to pass an `ADD_TOKEN` proposal by themselves, which would allow them to change the math of the treasury unilaterally.
+    *   **AI Governor Reasoning:** The AI should assess if the owner is actively attempting to introduce unauthorized tokens to dilute shareholders, or if their large share balance is simply a result of initial treasury bootstrapping.
+    *   **Audit Getter Dependency:** Relies on **Component #1 (`AuditBeforeJoin`)** -> `votingThres()` and standard ERC20 `balanceOf(owner)` on the `TreasuryToken` contract.
 3.  **Consensus Quorum Level:** The UI must display the immutable `votingThres` variable (basis points converted to percentage, e.g., 75%). This informs users of the supermajority requirement needed to pass major treasury restructuring proposals or close strategies. A lower threshold indicates higher centralization risk, whereas a higher threshold indicates democratic security but higher risk of governance gridlock.
+    *   **AI Governor Reasoning:** The AI should determine if the current threshold adequately protects minority shareholders from hostile takeovers, while ensuring it isn't so high that it creates a permanent governance gridlock.
+    *   **Audit Getter Dependency:** Relies on **Component #1 (`AuditBeforeJoin`)** -> `votingThres()`.
 4.  **Strategy Rebalancing & Asset Deviation Risk (Swap Policy):** While the policy's `swapBack` function provides necessary operational flexibility to trade assets and rebalance portfolios, it presents a potential centralization risk. A malicious owner/manager could execute a proposal under the guise of acquiring a "safe" token (e.g. USDC), but subsequently call `swapBack` to swap into high-risk, volatile, or unapproved tokens that do not align with the treasury's goals.
     *   **UI Trust Profile Metric:** The UI's Trust Profile MUST query the history of swaps (`getSwapBackHistory()`) and compare current holdings (`heldTokens`) against the originally proposed tokens. Any significant deviation, or accumulation of high-risk assets, must be flagged as a critical warning attribute in the owner behavior profile.
+    *   **AI Governor Reasoning:** The AI should analyze swap history against the Treasury Mandate. Are the swaps legitimate portfolio rebalancing efforts, or is the owner secretly pivoting the treasury into high-risk, unapproved volatile assets?
+    *   **Audit Getter Dependency:** Relies on **Component #3 (`PolicyTracker`)** -> queries the specific policy contract for `SwapExecuted` events and cross-references with `checkCompliance(address)`.
 5.  **Lending Policy Default-Risk Management:** If the treasury implements a `LendingPolicy`, the Trust Profile must audit and display the management model of the policy to calculate the default-risk safety rating. The UI evaluates this by identifying which of the three execution paths is active:
     *   **AI Governor Path (Highest Trust):** If an autonomous AI Governor is actively authorized on the Lending Policy, the Trust Profile displays a high-security status. The AI continuously monitors loan health factors and automatically triggers immediate on-chain `seizeCollateral()` and swap-backs upon default, minimizing bad debt.
     *   **Manual Owner Path (Medium Trust / Centralization Risk):** If the policy relies on the human owner to manually call `seizeCollateral()`, the UI displays a warning. Humans are subject to delays, manual errors, or inactivity during rapid market crashes, increasing default exposure.
     *   **Public Portal Dependency (Lowest Trust / Fallback):** If there is no active AI or active owner monitoring, the policy relies entirely on public searchers. The UI warns that low-value loans (where gas costs exceed the liquidation bonus) will likely sit in default forever, leading to capital lockups and treasury poor performance.
+    *   **AI Governor Reasoning:** The AI should evaluate the overall solvency of active loans. If manual monitoring is used, it should reason about the speed of past liquidations to determine if the human manager is reliably preventing bad debt.
+    *   **Audit Getter Dependency:** Relies on **Component #1 (`AuditBeforeJoin`)** -> `getAuth(address)` to check if the AI Agent wallet is authorized on the vault.
 6.  **Unified Policy Access Control:** The Trust Profile audits how authorization is managed across the treasury's active policies (e.g. `LendingPolicy`, `AssetSwapPolicy`). 
     *   **Delegated Authorization (Highest Trust):** If a policy contract directly queries the `TreasuryVault` for owner and authorized executor states (using `tOwner()` and `getAuth()`), the UI displays a high-trust rating. This ensures that transferring ownership or updating authorized wallets (like the AI Agent) on the Vault instantly and securely updates all policies, keeping access control synchronized.
     *   **Fragmented/Local Authorization (Centralization Warning):** If a policy contract defines its own local `owner` variable and authorization mappings, the UI displays a warning. Fragmented access control increases the risk of keys getting out of sync or a policy contract being hijacked if the owner forgets to update all contracts individually.
+    *   **AI Governor Reasoning:** The AI should evaluate if the DAO's security is compromised by fragmented permissions, reasoning if outdated authorized keys on standalone policies present an active backdoor risk.
+    *   **Audit Getter Dependency:** Relies on **Component #1 (`AuditBeforeJoin`)** -> `tOwner()` and `getAuth(address)` and cross-checks them against the policy's internal mappings.
 7.  **Unapproved Token & Collateral Additions:** The policy owner can register new collateral or trade assets (via `setAcceptedCollateral` or `setTokenOracleMarket`) linked to an upcoming `proposalId`. This allows shareholders to review the token modifications when voting on the associated proposal.
     *   **UI Trust Profile Metric (Orphaned / Unapproved Tokens):** The UI Trust Profile MUST scan the `collateralProposalIds` mapping in `LendingPolicy` and `tokenProposalIds` in `AssetSwapPolicy`. It compares the registered `proposalId` against the actual proposal states in the `TreasuryVault`. If a token is approved on-contract but the associated proposal ID was rejected, cancelled, or never created, the UI MUST display a severe warning flag indicating that the owner is introducing assets without shareholder approval, lowering the trust score.
     *   **UI Trust Profile Metric (Voting Front-Running):** The UI must audit if any newly added token has been actively used in transactions (swaps, lending, or borrows) *while* its associated proposal voting is still ongoing or pending. If active usage is detected prior to proposal execution, a high centralization risk caution must be displayed.
+    *   **AI Governor Reasoning:** The AI should determine if orphaned tokens are the result of innocent administrative cleanup delays, or if they represent a deliberate attempt by the owner to circumvent shareholder approval and trade unauthorized assets.
+    *   **Audit Getter Dependency:** Relies on **Component #2 (`AuditInteractionsWidget`)** -> `proposalBook(uint256)` and `closedProposal(uint256)` to verify the true state of the policy's mapped proposal ID.
+8.  **Deposit Token Asset Diversity & Decimal Risk:** The UI SHOULD include an audit or warning system that evaluates the treasury's accepted deposit tokens by calling `getApprovedTokens()`.
+    *   **UI Trust Profile Metric:** If a treasury accepts multiple tokens with different fiat values (e.g., accepting both USDC and a volatile asset) or different decimals (e.g., 6-decimal USDC alongside 18-decimal DAI), the UI MUST display a severe warning.
+    *   **AI Governor Reasoning:** The AI should evaluate the mathematical and economic safety of the approved deposit tokens. It must reason whether mixing differently priced or structured tokens exposes the vault's proportional math to manipulation (e.g., decimal exploitation) by malicious depositors.
+    *   **Audit Getter Dependency:** Relies on **Component #1 (`AuditBeforeJoin`)** -> `approvedTokens(IERC20)` and `tokensL()` to map out the active deposit parameters.
 
 ---
 

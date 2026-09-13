@@ -2,17 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 
-// NextAuth mock session hook
-function useSession() {
-    // In a real implementation, this returns the authenticated Google User session.
-    // For demo purposes, we mock an authenticated admin session.
-    return {
-        data: {
-            user: { name: "Platform Admin", email: "admin@morelikely.com", role: "ADMIN" }
-        },
-        status: "authenticated"
-    };
-}
+import { useSession } from "next-auth/react";
 
 export default function PlatformAdminDashboard() {
     const { data: session, status } = useSession();
@@ -24,7 +14,7 @@ export default function PlatformAdminDashboard() {
     if (status === "loading") return <div style={styles.container}>Authenticating...</div>;
     
     // Role-Based Access Control (RBAC) enforcement
-    if (status !== "authenticated" || session?.user?.role !== "ADMIN") {
+    if (status !== "authenticated" || (session?.user as any)?.role !== "ADMIN") {
         return (
             <div style={styles.container}>
                 <h1 style={{color: 'red'}}>403 Forbidden</h1>
@@ -74,7 +64,7 @@ export default function PlatformAdminDashboard() {
             <div style={styles.header}>
                 <h1 style={styles.title}>Platform Command Center</h1>
                 <div style={styles.userBadge}>
-                    {session.user.email} (SSO Authenticated)
+                    {session?.user?.email} (SSO Authenticated)
                 </div>
             </div>
 

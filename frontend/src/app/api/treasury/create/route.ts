@@ -95,6 +95,24 @@ export async function POST(req: NextRequest) {
         chainId: body.chainId,
         aiNetwork: body.aiNetwork,
         aiModel: body.aiModel,
+        goals: {
+          create: {
+            slippageLimit: 0.5,
+            stopLoss: 5.0,
+            maxTreasuryPercentage: 10.0,
+            targetAllocations: {}
+          }
+        },
+        documents: {
+          create: {
+            documentType: "mandate",
+            isPrivateOverride: false,
+            storageMode: "MODE_A_STANDARD",
+            fileUri: "https://platform-storage.com/templates/default-treasury-mandate.md",
+            fileHash: "0xDEFAULT_HASH", // In production, hash the default template
+            signature: "0xPLATFORM_ADMIN_SIGNATURE" // Proves it's the unedited default
+          }
+        }
       },
     });
 

@@ -18,6 +18,7 @@ export default function CreateProposalWidget({ vaultAddress, policies, onProposa
   const [tokenAddress, setTokenAddress] = useState<string>("");
   const [status, setStatus] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const [description, setDescription] = useState<string>("");
 
   const handleSubmit = async () => {
     try {
@@ -49,7 +50,25 @@ export default function CreateProposalWidget({ vaultAddress, policies, onProposa
       );
 
       setStatus("Waiting for confirmation...");
-      await tx.wait();
+      const receipt = await tx.wait();
+      
+      // Need to parse ProposalOpen event to get proposalId
+      // Fallback/simplification: since we don't have the exact ABI parsing here easily,
+      // we'll rely on the API to link it or just use the TxHash for now.
+      const txHash = receipt.hash;
+
+      setStatus("Saving description off-chain...");
+      await fetch("/api/proposals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          vaultAddress, 
+          txHash, 
+          description,
+          tokenAddress,
+          amount
+        })
+      });
 
       setStatus("Proposal created successfully!");
       if (onProposalCreated) {
@@ -101,6 +120,18 @@ export default function CreateProposalWidget({ vaultAddress, policies, onProposa
             placeholder="0x..." 
             value={tokenAddress} 
             onChange={e => setTokenAddress(e.target.value)} 
+          />
+        </div>
+
+        <div className={styles.field}>
+          <label className="label">Proposal Rationale / Description *</label>
+          <textarea 
+            className="input" 
+            placeholder="Why should this proposal be executed?" 
+            value={description} 
+            onChange={e => setDescription(e.target.value)}
+            rows={4}
+            style={{ resize: "vertical" }}
           />
         </div>
 

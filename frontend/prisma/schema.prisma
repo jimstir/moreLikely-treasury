@@ -37,6 +37,7 @@ model Treasury {
   updatedAt       DateTime         @updatedAt
   goals           TreasuryGoals?
   proposals       Proposal[]
+  documents       TreasuryDocument[]
   trustProfiles   TrustProfile[]
   performances    TreasuryPerformance[]
 }
@@ -45,8 +46,6 @@ model TreasuryGoals {
   id                    String   @id @default(uuid())
   treasuryId            String   @unique
   treasury              Treasury @relation(fields: [treasuryId], references: [id], onDelete: Cascade)
-  mandate               String?  @default("No specific mandate provided.") // Shareholder goals for AI to evaluate against
-  privateOverrides      Json?    // e.g. { "assetSwap": "Custom override prompt" }
   slippageLimit         Float    @default(0.5) // e.g. 0.5%
   stopLoss              Float    @default(5.0) // e.g. 5.0%
   maxTreasuryPercentage Float    @default(10.0) // max size of a single trade (e.g. 10.0%)
@@ -54,6 +53,21 @@ model TreasuryGoals {
   dataSources           String   @default("") // Comma-separated list of approved web/news feeds
   disputePeriodSeconds  Int      @default(86400) // Default 24 hours review delay
   updatedAt             DateTime @updatedAt
+}
+
+model TreasuryDocument {
+  id                 String   @id @default(uuid())
+  treasuryId         String
+  treasury           Treasury @relation(fields: [treasuryId], references: [id], onDelete: Cascade)
+  documentType       String   // e.g. "mandate", "trust-profile-prompt", "asset-swap-prompt", "lending-prompt"
+  isPrivateOverride  Boolean  @default(false)
+  storageMode        String   @default("MODE_A_STANDARD") // "MODE_A_STANDARD" or "MODE_B_0G"
+  fileUri            String   // S3 URI, Local path, or 0G Content Identifier
+  fileHash           String?  // SHA-256 for integrity (Mode A)
+  signature          String?  // EIP-712 signature proving authenticity
+  lastUpdatedTimestamp DateTime @default(now())
+
+  @@unique([treasuryId, documentType])
 }
 
 model TreasuryPerformance {

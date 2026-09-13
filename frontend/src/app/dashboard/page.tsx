@@ -56,7 +56,7 @@ export default function DashboardPage() {
         try {
           const contract = new ethers.Contract(t.tokenAddress, ERC20_ABI, provider);
           const balance = await contract.balanceOf(userAddress);
-          if (balance > 0n) {
+          if (balance > BigInt(0)) {
             joined.add(t.id);
           }
         } catch (err) {

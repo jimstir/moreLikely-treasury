@@ -9,18 +9,24 @@ import { useWeb3 } from '@/context/Web3Context';
 function GovernorContent() {
   const searchParams = useSearchParams();
   const id = searchParams.get('id');
+  const vaultAddressParam = searchParams.get('vaultAddress');
   const [activeTab, setActiveTab] = useState('deploy');
   const { address } = useWeb3();
   const [vaultAddress, setVaultAddress] = useState<string | null>(null);
 
   useEffect(() => {
-    // In a real app, you would query the DB for the treasury details to get the vaultAddress.
-    // For now, we mock it or expect the UI to pass it down.
-    // Setting a mock vault address if ID is present for demo purposes.
-    if (id) {
-      setVaultAddress("0xMockVaultAddressForDemo");
+    if (vaultAddressParam) {
+      setVaultAddress(vaultAddressParam);
+    } else if (id) {
+      // Fallback: If only ID is provided, query the backend for the vault address
+      fetch(`/api/treasury/info?treasuryId=${id}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.vaultAddress) setVaultAddress(data.vaultAddress);
+        })
+        .catch(err => console.error("Failed to load vault address for treasury ID", err));
     }
-  }, [id]);
+  }, [id, vaultAddressParam]);
   
   // Deploy State
   const [treasuryNetwork, setTreasuryNetwork] = useState('arc_testnet');

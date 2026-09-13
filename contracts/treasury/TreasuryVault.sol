@@ -405,16 +405,27 @@ contract TreasuryVault is ERC4626 {
     * - MUST be a user who deposited to proposal
     */
     function vote(uint256 proposal) public view returns (bool) {
-        uint256 shares = totalShares[proposal];
+        uint256 votes = totalShares[proposal];
+
+        IERC20 token = proposalBook[proposal].token;
+        uint256 rawWithdrawAmount = proposalBook[proposal].withdraw;
+        uint8 decimals = ERC20(address(token)).decimals();
+        uint256 normalWithdraw = rawWithdrawAmount;
 
         if (proposalBook[proposal].request == ProposalType.TXNS) {
             // value-ratio voting: require total shares for proposal >= requested withdraw amount
-            return shares >= proposalBook[proposal].withdraw;
+            // 3. Scale the withdraw amount to a flat 18 decimals
+            if (decimals < 18) {
+                normalWithdraw = rawWithdrawAmount * (10 ** (18 - decimals));
+            } else if (decimals > 18) {
+                normalWithdraw = rawWithdrawAmount / (10 ** (decimals - 18));
+            }
+            // 4. Safely compare 18-decimal shares against the 18-decimal withdraw amount
+            return votes >= normalWithdraw;
         } else {
             // supply-based voting: require shares >= (total * votingThresholdBps) / 10000
             uint256 total = IERC20(treasToken).totalSupply();
-
-            return shares * 10000 >= total * votingThres;
+            return votes * 10000 >= total * votingThres;
         }
     }
     /** @dev  Transfer tokens to policy for approved policies
@@ -466,6 +477,15 @@ contract TreasuryVault is ERC4626 {
         require(amount > 0, "Amount can not be zero");
         UserDeposit storage deposits = addFunds[depositNum];
 
+        uint8 decimals = ERC20(address(token)).decimals();
+        uint256 normalAmount = amount;
+        // Scale the deposit amount to a flat 18 decimals
+        if (decimals < 18) {
+            normalAmount = amount * (10 ** (18 - decimals));
+        } else if (decimals > 18) {
+            normalAmount = amount / (10 ** (decimals - 18));
+        }
+
         depositNum = depositNum + 1;
         deposits.num = depositNum;
         deposits.amount = amount;
@@ -474,7 +494,10 @@ contract TreasuryVault is ERC4626 {
         deposits.owner = msg.sender;
 
         SafeERC20.safeTransferFrom(token, msg.sender, address(this), amount);
-        ITreasuryToken(address(treasToken)).mintTreasury(msg.sender, amount);
+        ITreasuryToken(address(treasToken)).mintTreasury(
+            msg.sender,
+            normalAmount
+        );
     }
     /** @dev Funds being return
      * - Does not issue treasuryToken

@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     // 2. Fetch the existing Layer 1 Trust Profile
     const profile = await prisma.trustProfile.findUnique({
       where: { walletAddress_treasuryId: { walletAddress, treasuryId } },
-      include: { treasury: { include: { goals: true } } },
+      include: { treasury: { include: { goals: true, documents: true } } },
     });
 
     if (!profile || !profile.scores) {
@@ -32,7 +32,8 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Extract the Mandate
-    const mandate = profile.treasury?.goals?.mandate || "No specific mandate provided.";
+    const mandateDoc = profile.treasury?.documents?.find(d => d.documentType === "mandate");
+    const mandate = mandateDoc ? mandateDoc.fileUri : "No specific mandate provided.";
 
     // 4. Call the LLM to generate the Layer 2 Overlay
     const layer1Scores: any = profile.scores;

@@ -18,9 +18,6 @@ export class AgentRunner {
         this.agentWalletAddress = agentWalletAddress;
     }
 
-    /**
-     * Executes a single decision tick of the AI Governor.
-     */
     public async runTick(): Promise<void> {
         console.log(`[AgentRunner] Starting tick for agent wallet: ${this.agentWalletAddress}`);
         
@@ -38,6 +35,12 @@ export class AgentRunner {
         ];
 
         let hasFinished = false;
+        let invocationId = "inv-" + Date.now();
+        let logger = new (await import("./logger")).AgentLogger(process.env.AGENT_PRIVATE_KEY || "");
+        
+        let proposalRationale = "";
+        let proposalTimeframe = "";
+        let generatedProposalId: string | null = null;
 
         // 2. Core loop
         while (!hasFinished) {
@@ -56,6 +59,16 @@ export class AgentRunner {
                     console.log(`[AgentRunner] Executing tool: ${toolCall.toolName}`);
                     try {
                         const toolResult = await this.executeTool(toolCall);
+                        
+                        if (toolCall.toolName === 'propose_trade' && toolCall.parameters.rationale) {
+                            proposalRationale = toolCall.parameters.rationale;
+                            proposalTimeframe = toolCall.parameters.timeframe || "1 week";
+                        }
+                        
+                        if (toolResult && toolResult.proposalId) {
+                            generatedProposalId = toolResult.proposalId.toString();
+                        }
+                        
                         conversationHistory.push({
                             role: 'tool',
                             name: toolCall.toolName,
@@ -63,7 +76,7 @@ export class AgentRunner {
                         });
                     } catch (error: any) {
                         if (error.message.startsWith("FIRE_AND_SLEEP:")) {
-                            console.log("[AgentRunner] Gracefully persisting memory to database and terminating process to save 0G compute credits.");
+                            console.log("[AgentRunner] Gracefully persisting memory to database and terminating process to save compute credits.");
                             hasFinished = true;
                             break; // break out of tool loop
                         } else {
@@ -78,7 +91,19 @@ export class AgentRunner {
         }
 
         console.log(`[AgentRunner] Tick complete. Saving transcript...`);
-        // TODO: Save transcript via logger.ts
+        const use0G = process.env.USE_0G_STORAGE === 'true';
+        const receiptHash = await logger.saveTranscript(invocationId, conversationHistory, use0G);
+        
+        if (generatedProposalId && proposalRationale) {
+            await logger.linkDecisionReport(
+                generatedProposalId,
+                proposalRationale,
+                proposalTimeframe,
+                {}, // swapRoutes 
+                {}, // rawMarketData
+                receiptHash || undefined
+            );
+        }
     }
 
     private async executeTool(toolCall: ToolCallRequest): Promise<any> {
@@ -88,15 +113,16 @@ export class AgentRunner {
                 return await this.stateProvider.getTreasuryState();
             case 'get_market_data':
                 return await this.stateProvider.getMarketData([toolCall.parameters.token]);
-            case 'execute_trade':
-                // Note: The actual call to aiAgent.proposeTrade() would happen here
-                // We simulate the Circle API returning a transactionId immediately
+            case 'propose_trade':
+                console.log(`[AgentRunner] propose_trade called with params:`, toolCall.parameters);
+                // Simulate Circle wallet broadcasting the proposalOpen payload
+                const mockProposalId = Math.floor(Math.random() * 1000);
+                return { success: true, proposalId: mockProposalId, txHash: "0xMockHash" };
+            case 'execute_swap':
+                console.log(`[AgentRunner] execute_swap called with params:`, toolCall.parameters);
                 const txId = "circle-tx-" + Math.floor(Math.random() * 1000000);
-                console.log(`[AgentRunner] Tool execute_trade called. Circle API returned TxId: ${txId}`);
+                console.log(`[AgentRunner] Circle API returned TxId: ${txId}`);
                 console.log(`[AgentRunner] 🔥 FIRE AND SLEEP INITIATED 🔥`);
-                console.log(`[AgentRunner] Shutting down agent loop. Webhook at /api/webhooks/circle will awake agent when ${txId} confirms.`);
-                
-                // Throw an exception or return a special flag to break the core loop and shut down compute
                 throw new Error(`FIRE_AND_SLEEP:${txId}`);
             default:
                 return { error: `Tool ${toolCall.toolName} not implemented or unrecognized.` };
