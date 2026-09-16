@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 1. JSON.parse() Validation (MVP Security)
+    // 1. JSON.parse() Validation (Security)
     // Extract JSON blocks from the markdown to ensure the user didn't break them.
     const jsonBlockRegex = /```json\n([\s\S]*?)\n```/g;
     let match;
@@ -63,10 +63,28 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 4. Storage & Database Pointer Update
-    // In a production environment, this is where you would upload `markdownContent` to AWS S3, Google Cloud, or 0G Storage.
-    // For this MVP backend logic, we will mock the URI generation.
-    const mockStorageUri = `https://platform-storage.com/treasuries/${treasuryId}/${documentType}_${Date.now()}.md`;
+        // 4. Storage & Database Pointer Update
+    let storageUri = "";
+    const storageMode = process.env.STORAGE_MODE || "MODE_A_STANDARD";
+
+    if (storageMode === "MODE_B_0G") {
+      // 0G Decentralized Storage Network Upload
+      // In production, instantiate the Indexer with ZEROG_STORAGE_RPC and a funded server signer
+      // const { Indexer } = require("@0gfoundation/0g-storage-ts-sdk");
+      // const indexer = new Indexer(process.env.ZEROG_STORAGE_RPC);
+      // const file = new File([markdownContent], `${documentType}.md`, { type: "text/markdown" });
+      // const uploadResult = await indexer.upload(file, process.env.SEPOLIA_RPC_URL, serverSigner);
+      // storageUri = uploadResult.cid;
+      
+      storageUri = `0g-cid-${fileHash.substring(0, 10)}`; // Placeholder until SDK is fully wired
+    } else {
+      // Standard Storage (AWS S3, GCS, R2)
+      // const s3Client = new S3Client({ region: process.env.STORAGE_REGION });
+      // await s3Client.send(new PutObjectCommand({ Bucket: process.env.STORAGE_BUCKET_NAME, Key: `${treasuryId}/${documentType}.md`, Body: markdownContent }));
+      // storageUri = `https://${process.env.STORAGE_BUCKET_NAME}.s3.amazonaws.com/${treasuryId}/${documentType}.md`;
+      
+      storageUri = `https://platform-storage.com/treasuries/${treasuryId}/${documentType}_${Date.now()}.md`; // Placeholder
+    }
 
     const updatedDocument = await prisma.treasuryDocument.upsert({
       where: {
@@ -76,7 +94,7 @@ export async function POST(req: NextRequest) {
         }
       },
       update: {
-        fileUri: mockStorageUri,
+        fileUri: storageUri,
         fileHash: fileHash,
         signature: signature,
         isPrivateOverride: isPrivateOverride,
@@ -85,7 +103,7 @@ export async function POST(req: NextRequest) {
       create: {
         treasuryId: treasuryId,
         documentType: documentType,
-        fileUri: mockStorageUri,
+        fileUri: storageUri,
         fileHash: fileHash,
         signature: signature,
         isPrivateOverride: isPrivateOverride,

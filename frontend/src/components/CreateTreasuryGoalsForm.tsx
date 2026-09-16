@@ -49,21 +49,39 @@ export default function CreateTreasuryGoalsForm({ treasuryId, onSave }: CreateTr
     
     setIsSubmitting(true);
     
-    // Simulate API call to save goals
-    setTimeout(() => {
-      setIsSubmitting(false);
-      setSuccess(true);
-      if (onSave) {
-        onSave({
+        try {
+      const payload = {
+        treasuryId,
+        documentType: "mandate",
+        markdownContent: JSON.stringify({
           allocations,
           slippageLimit,
           stopLoss,
           maxTradeSize,
           dataSources: dataSources.split(",").map((s) => s.trim()).filter(Boolean),
-        });
-      }
+        }),
+        isPrivateOverride: false,
+        signature: "0xPendingSignature", // TODO: Wire up useSignMessage hook
+        signerAddress: "0xPendingAddress" // TODO: Wire up useAccount hook
+      };
+
+      const res = await fetch("/api/treasury/document", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) throw new Error("Failed to save goals");
+
+      setSuccess(true);
+      if (onSave) onSave(payload.markdownContent);
       setTimeout(() => setSuccess(false), 3000);
-    }, 1500);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to save goals.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (

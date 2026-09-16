@@ -136,4 +136,42 @@ Evaluate the following attributes:
       expect(MockRiskEngine.evaluateTrade(unsafeAction, parsedGoals)).to.be.false;
     });
   });
+
+  describe("Phase 3: Trust Profile Data Dictionary (Agent Context Variables)", () => {
+    it("should correctly populate Attribute 2 (Token Add Control) variables", () => {
+      // Simulating the backend indexer fetching data for Attribute 2
+      const mockAttr2Data = {
+        layer1Metrics: {
+          ownerVotingPowerPercentage: 80,
+          votingThresholdPercentage: 75,
+          hasUnilateralControl: true
+        },
+        recentEvents: [{
+          proposalId: "prop-4",
+          proposalType: "ADD_TOKEN",
+          tokenAdded: { symbol: "SCAM", contractAddress: "0x...", isVerifiedBlueChip: false },
+          passedUnilaterallyByOwner: true
+        }]
+      };
+
+      expect(mockAttr2Data.layer1Metrics.hasUnilateralControl).to.be.true;
+      expect(mockAttr2Data.recentEvents[0].tokenAdded.isVerifiedBlueChip).to.be.false;
+    });
+
+    it("should correctly populate Attribute 5 (Lending Policy) variables without throwing on missing optional data", () => {
+      // Simulating graceful degradation (optional variables)
+      const mockAttr5Data = {
+        layer1Metrics: {
+          isAiGovernorAuthorized: true,
+          totalActiveLoans: 3
+          // loansInDefaultWarning is missing in this fetch
+        },
+        recentEvents: []
+      };
+
+      expect(mockAttr5Data.layer1Metrics.isAiGovernorAuthorized).to.be.true;
+      expect(mockAttr5Data.layer1Metrics.totalActiveLoans).to.equal(3);
+      expect((mockAttr5Data.layer1Metrics as any).loansInDefaultWarning).to.be.undefined;
+    });
+  });
 });

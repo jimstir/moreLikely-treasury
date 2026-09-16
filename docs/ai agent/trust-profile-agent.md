@@ -1,6 +1,6 @@
 # Trust Profile AI Agent (Shareholder Auditor)
 
-The Trust Profile is a critical transparency module displayed on the frontend dashboard, allowing potential users and stakeholders to evaluate the risk of joining a Smart Treasury. 
+The Trust Profile is a critical transparency module allowing potential users and stakeholders to evaluate the risk of joining a Smart Treasury. 
 
 To prevent deterministic on-chain data from unfairly penalizing treasuries (e.g., flagging a risk because an owner hasn't immediately executed a passed proposal), the architecture splits the Trust Profile into two layers:
 
@@ -11,32 +11,239 @@ The UI queries the blockchain directly to find raw facts. Examples:
 *   The quorum threshold is low.
 
 ### Layer 2: AI Contextual Overlay (LLM Reasoning)
-The `AIShareholderAgent` (acting as the Trust Profile Auditor) runs periodically to evaluate the **Layer 1** metrics against recent on-chain events. It provides contextual reasoning for "gray areas" and outputs a structured JSON assessment.
-
-For example, if Layer 1 flags "Unapproved Tokens Present", the AI Agent queries recent events. If it sees a proposal to remove the token passed 4 hours ago, it downgrades the risk to "Low" and adds a rationale: *"Pending owner execution. Standard operational delay."*
+The `AIShareholderAgent` (acting as the Trust Profile Auditor) runs to evaluate the **Layer 1** metrics against recent on-chain events. It provides contextual reasoning for "gray areas" and outputs a structured JSON assessment.
 
 ---
 
 ## Architecture & Implementation
 
-### 1. Data Aggregation
-The platform backend or the Self-Hosted Agent Runner collects the treasury's flagged metrics and a window of recent events (proposals, transactions) into a structured JSON context block.
+### 1. Document & Skills Typology
+The agent relies on a strict reading hierarchy to ensure context is maintained:
+1.  **`treasury-mandate.md`**: The master context explaining the nature of the treasury and its protocol mechanics.
+2.  **`trust-profile-instructions.md`**: The core prompt telling the agent *how* to act as an auditor.
+3.  **`trust-profile-checkpoints.md`**: The open-source, community-curated list of actual audit criteria. The agent loads this skills document dynamically to evaluate the treasury.
 
-### 2. Prompt Injection
-The context block is injected into the predefined system prompt located at:
-[`agent/prompts/trust-profile-prompt.txt`](../../agent/prompts/trust-profile-prompt.txt)
-
-This prompt instructs the LLM to act as an impartial auditor, downgrading severity if a recent event explains the anomaly.
-
-### 3. Structured JSON Output
-To ensure the UI can consume the AI's reasoning, the LLM is constrained to output data matching the JSON schema located at:
-[`agent/prompts/trust-profile-schema.json`](../../agent/prompts/trust-profile-schema.json)
-
-The UI overlays the `assessedRiskLevel` and `shortRationale` on top of the original Layer 1 metrics.
+### 2. Structured JSON Output
+To ensure the UI can consume the AI's reasoning, the LLM is constrained to output data matching a JSON schema (array of `checkpoints`). The UI overlays the `assessedRiskLevel` and `shortRationale` on top of the original Layer 1 metrics.
 
 ---
 
-## Updating the Prompt for Private Deployments
-Users running Private (Self-Hosted) AI Governors can modify the LLM's reasoning engine to be more strict or lenient by editing `trust-profile-prompt.txt`. 
+## The Trust Profile Checkpoints (AI Governor Reasoning)
 
-As long as the private agent continues to output valid JSON matching the `trust-profile-schema.json`, the platform will successfully parse and display the custom AI insights on the treasury's frontend dashboard.
+Below is the detailed architectural reasoning for the core community checkpoints. The LLM utilizes the provided JSON context data to determine if an anomaly is a justified protection mechanism or erratic interference.
+
+### 1. Owner Governance Override
+**AI Governor Reasoning:** The AI evaluates the context of `proposalClose()` calls. Are they justified protective measures against sudden market crashes, or does the frequency indicate erratic, centralized interference that overrides legitimate DAO decisions?
+**Required LLM Context Data (JSON):**
+```json
+{
+  "layer1Metrics": {
+    "totalProposalsCreated": "number",
+    "totalProposalsClosedByOwner": "number",
+    "averageProposalDurationSeconds": "number"
+  },
+  "recentEvents": [
+    {
+      "proposalId": "string",
+      "closureType": "owner_override | scheduled_end",
+      "originalProposalTerms": {
+        "scheduledCloseDate": "timestamp | null",
+        "strategyType": "string"
+      },
+      "timeOpenBeforeClosureSeconds": "number",
+      "marketSnapshotAtClosure": {
+        "blockTimestamp": "number",
+        "assetPrices": {
+          "tokenA": "price",
+          "tokenB": "price"
+        }
+      }
+    }
+  ]
+}
+```
+**Variable Definitions (UI Data Dictionary):**
+*   `totalProposalsCreated`: Total number of proposals ever initiated.
+*   `totalProposalsClosedByOwner`: Count of proposals forcefully closed by the owner. **(Generated via the `proposalBook(uint256)` mapping in `AuditInteractionsWidget`.)**
+*   `averageProposalDurationSeconds`: The normal lifespan of a proposal in this treasury.
+*   `closureType`: Whether it ended naturally (`scheduled_end`) or forcefully (`owner_override`).
+*   `marketSnapshotAtClosure.assetPrices`: The exact prices of treasury assets at the time of closure to determine if a market crash was occurring.
+
+### 2. Token Add Control
+**AI Governor Reasoning:** The AI should assess if the owner is actively attempting to introduce unauthorized tokens to dilute shareholders, or if their large share balance is simply a result of initial treasury bootstrapping.
+**Required LLM Context Data (JSON):**
+```json
+{
+  "layer1Metrics": {
+    "ownerVotingPowerPercentage": "number",
+    "votingThresholdPercentage": "number",
+    "hasUnilateralControl": "boolean"
+  },
+  "recentEvents": [
+    {
+      "proposalId": "string",
+      "proposalType": "ADD_TOKEN",
+      "tokenAdded": {
+        "symbol": "string",
+        "contractAddress": "string",
+        "isVerifiedBlueChip": "boolean" 
+      },
+      "passedUnilaterallyByOwner": "boolean"
+    }
+  ]
+}
+```
+**Variable Definitions (UI Data Dictionary):**
+*   `ownerVotingPowerPercentage`: The percent of the total DAO shares held by the owner. **(Generated by dividing `balanceOf(owner)` by `totalSupply()` on the `TreasuryToken` contract.)**
+*   `votingThresholdPercentage`: The percent of votes required to pass a proposal.
+*   `hasUnilateralControl`: True if the owner's voting power is greater than the voting threshold.
+*   `tokenAdded.isVerifiedBlueChip`: True if the token is a recognized, safe asset. **(Generated by checking if the contract address exists on standard Uniswap default token lists.)**
+*   `passedUnilaterallyByOwner`: True if the owner voted alone to pass the token.
+
+### 3. Consensus Quorum Level
+**AI Governor Reasoning:** The AI should determine if the current threshold adequately protects minority shareholders from hostile takeovers, while ensuring it isn't so high that it creates a permanent governance gridlock.
+**Required LLM Context Data (JSON):**
+```json
+{
+  "layer1Metrics": {
+    "currentVotingThresholdBps": "number",
+    "totalShareholderCount": "number",
+    "averageVoterTurnoutPercentage": "number"
+  },
+  "recentEvents": [
+    {
+      "proposalId": "string",
+      "failedDueToQuorum": "boolean",
+      "voterTurnoutPercentage": "number"
+    }
+  ]
+}
+```
+**Variable Definitions (UI Data Dictionary):**
+*   `currentVotingThresholdBps`: The current quorum requirement in basis points (e.g., 7500 = 75%).
+*   `totalShareholderCount`: The total number of unique wallets holding shares.
+*   `averageVoterTurnoutPercentage`: The average participation rate in historical votes. **(Generated by having the backend indexer aggregate total votes cast across all historical proposals.)**
+*   `failedDueToQuorum`: True if a proposal received 100% "Yes" votes but still failed because not enough people showed up.
+
+### 4. Strategy Rebalancing & Asset Deviation Risk (Swap Policy)
+**AI Governor Reasoning:** The AI should analyze swap history against the Treasury Mandate. Are the `swapBack` executions legitimate portfolio rebalancing efforts, or is the owner secretly pivoting the treasury into high-risk, unapproved volatile assets?
+**Required LLM Context Data (JSON):**
+```json
+{
+  "layer1Metrics": {
+    "totalSwapBacksExecuted": "number",
+    "portfolioDeviationFromMandatePercentage": "number"
+  },
+  "recentEvents": [
+    {
+      "txHash": "string",
+      "tokenSold": "string",
+      "tokenBought": "string",
+      "isTokenBoughtInMandate": "boolean",
+      "amountUSD": "number"
+    }
+  ]
+}
+```
+**Variable Definitions (UI Data Dictionary):**
+*   `totalSwapBacksExecuted`: The number of times the owner used the swap-back rebalancing function. **(Generated by indexing all `SwapExecuted` events emitted by the specific Policy contract.)**
+*   `portfolioDeviationFromMandatePercentage`: How far the current portfolio differs from the target allocations in the mandate.
+*   `isTokenBoughtInMandate`: True if the token being purchased is actually listed in the approved goals.
+
+### 5. Lending Policy Default-Risk Management
+**AI Governor Reasoning:** The AI should evaluate the overall solvency of active loans. If manual monitoring is used, it should reason about the speed of past liquidations to determine if the human manager is reliably preventing bad debt, compared to an active autonomous AI.
+**Required LLM Context Data (JSON):**
+```json
+{
+  "layer1Metrics": {
+    "isAiGovernorAuthorized": "boolean",
+    "totalActiveLoans": "number",
+    "loansInDefaultWarning": "number"
+  },
+  "recentEvents": [
+    {
+      "loanId": "string",
+      "wasLiquidated": "boolean",
+      "timeSpentInDefaultWarningSeconds": "number",
+      "liquidator": "owner | public | ai_agent"
+    }
+  ]
+}
+```
+**Variable Definitions (UI Data Dictionary):**
+*   `agentVerificationReceipt`: Generated by checking the 0G Network or Platform deployment logs to mathematically prove the AI Governor is actively deployed for lending tasks.
+*   `isAiGovernorAuthorized`: True if an autonomous AI is actively managing the loans.
+*   `totalActiveLoans`: Number of current open loans.
+*   `loansInDefaultWarning`: Number of loans currently breaching their health factor.
+*   `timeSpentInDefaultWarningSeconds`: How long it took for the manager to liquidate the bad debt. **(Generated by tracking the block timestamp when a loan's health factor dropped below 1.0 against the timestamp of the actual liquidation tx.)**
+*   `liquidator`: Who executed the liquidation (the AI, the Owner, or a public searcher).
+
+### 6. Unified Policy Access Control
+**AI Governor Reasoning:** The AI should evaluate if the DAO's security is compromised by fragmented permissions, reasoning if outdated authorized keys on standalone policies present an active backdoor risk compared to a centralized Vault check (`getAuth()`).
+**Required LLM Context Data (JSON):**
+```json
+{
+  "layer1Metrics": {
+    "vaultOwnerAddress": "string",
+    "totalActivePolicies": "number",
+    "policiesWithFragmentedAccess": "number"
+  },
+  "recentEvents": [
+    {
+      "policyAddress": "string",
+      "localOwnerDiffersFromVault": "boolean",
+      "lastAccessControlUpdateTimestamp": "number"
+    }
+  ]
+}
+```
+**Variable Definitions (UI Data Dictionary):**
+*   `vaultOwnerAddress`: The master owner address on the central TreasuryVault.
+*   `policiesWithFragmentedAccess`: The count of active policies that have a different local owner than the main Vault.
+*   `localOwnerDiffersFromVault`: True if the policy contract's permissions are dangerously out of sync with the Vault. **(Generated by calling `tOwner()` on the Vault and comparing it to the `owner` state variable on the standalone policy contract.)**
+
+### 7. Unapproved Token & Collateral Additions
+**AI Governor Reasoning:** The AI should determine if orphaned/unapproved tokens are the result of innocent administrative cleanup delays, or if they represent a deliberate attempt by the owner to circumvent shareholder approval and trade unauthorized assets (front-running the vote).
+**Required LLM Context Data (JSON):**
+```json
+{
+  "layer1Metrics": {
+    "totalTokensOnPolicyContracts": "number",
+    "unapprovedOrphanedTokens": "number"
+  },
+  "recentEvents": [
+    {
+      "tokenAddress": "string",
+      "associatedProposalId": "string",
+      "proposalState": "pending | rejected | passed | null",
+      "hasBeenTradedBeforeApproval": "boolean"
+    }
+  ]
+}
+```
+**Variable Definitions (UI Data Dictionary):**
+*   `totalTokensOnPolicyContracts`: The number of tokens registered to policy contracts.
+*   `unapprovedOrphanedTokens`: Tokens added to a policy where the overarching proposal was rejected or never existed.
+*   `offChainProposalDescription`: The text of the proposal. **(Parsed from the off-chain document to verify the owner isn't trading a token secretly omitted from the proposal description.)**
+*   `hasBeenTradedBeforeApproval`: True if the owner started trading the token before the voting period officially ended (front-running). **(Generated by finding the token in `collateralProposalIds`, verifying the Vault proposal is still `pending`, and checking the policy contract for transfer events.)**
+
+### 8. Deposit Token Asset Diversity & Decimal Risk
+**AI Governor Reasoning:** The AI should evaluate the mathematical and economic safety of the approved deposit tokens. It must reason whether mixing differently priced or structured tokens (e.g., 6 vs 18 decimals) exposes the vault's proportional math to manipulation by malicious depositors.
+**Required LLM Context Data (JSON):**
+```json
+{
+  "layer1Metrics": {
+    "approvedDepositTokens": [
+      {
+        "symbol": "string",
+        "decimals": "number",
+        "currentPegValueUSD": "number"
+      }
+    ],
+    "hasDecimalMismatch": "boolean",
+    "hasFiatValueMismatch": "boolean"
+  },
+  "recentEvents": []
+}
+```
+

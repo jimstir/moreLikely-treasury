@@ -35,20 +35,34 @@ export async function POST(req: NextRequest) {
     const mandateDoc = profile.treasury?.documents?.find(d => d.documentType === "mandate");
     const mandate = mandateDoc ? mandateDoc.fileUri : "No specific mandate provided.";
 
-    // 4. Call the LLM to generate the Layer 2 Overlay
+        // 4. Call the LLM to generate the Layer 2 Overlay
     const layer1Scores: any = profile.scores;
     const aiOverlay = await generateAiOverlay(layer1Scores, mandate);
+
+    // Calculate Master Probability
+    const triggered = aiOverlay.filter((a: any) => a.isTriggered);
+    let probability = 0;
+    if (triggered.length > 0) {
+      // Basic algorithmic score: 35% base per trigger, up to 99%
+      probability = Math.min(triggered.length * 35, 99);
+    }
 
     // 5. Save the updated AI overlay back to the profile
     const updatedProfile = await prisma.trustProfile.update({
       where: { id: profile.id },
       data: {
         aiOverlay: aiOverlay as any,
+        overallScore: probability, // Reusing overallScore to store the Master Malicious Probability %
         lastComputedAt: new Date(),
       },
     });
 
-    return NextResponse.json(updatedProfile);
+    return NextResponse.json({
+      success: true,
+      overallMaliciousProbability: probability,
+      triggeredAttributes: triggered,
+      profile: updatedProfile
+    });
   } catch (error: any) {
     console.error("AI Audit Error:", error);
     return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });

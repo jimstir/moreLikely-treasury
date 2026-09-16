@@ -31,7 +31,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      votesCounted: 1000 // Mock value
+      votesCounted: 0 // TODO: Query on-chain balance to calculate actual voting weight
     });
 
   } catch (error: any) {

@@ -1,4 +1,10 @@
+import { ethers } from "ethers";
 import { ILLMProvider, IStateProvider, ITradeExecutor, ToolCallRequest } from './interfaces';
+import fs from 'fs';
+import path from 'path';
+import { TransactionRelayer, TransactionPayload } from './tools/TransactionRelayer';
+import { TreasuryVaultTools } from './tools/TreasuryVaultTools';
+import { AssetSwapPolicyTools } from './tools/AssetSwapPolicyTools';
 
 export class AgentRunner {
     private llmProvider: ILLMProvider;
@@ -21,14 +27,41 @@ export class AgentRunner {
     public async runTick(): Promise<void> {
         console.log(`[AgentRunner] Starting tick for agent wallet: ${this.agentWalletAddress}`);
         
-        // 1. Fetch initial state
+        // 1. Fetch deep on-chain state
         const state = await this.stateProvider.getTreasuryState();
         const goals = await this.stateProvider.getTreasuryGoals();
         
-        const systemPrompt = `You are an AI Governor managing an Open Treasury.
-        Your goals are: ${JSON.stringify(goals)}
-        Current state: ${JSON.stringify(state)}
-        Use the provided tools to analyze the market and execute trades.`;
+        // Assuming the state provider has been upgraded to fetch active proposals
+        const activeProposals = (this.stateProvider as any).getActiveProposals ? await (this.stateProvider as any).getActiveProposals() : [];
+        const marketData = await this.stateProvider.getMarketData(state.assets);
+        
+        // 2. Dynamically load the markdown prompt
+        const promptPath = path.join(process.cwd(), 'agent', 'prompts', 'treasury-management-prompt.md');
+        let systemPrompt = "";
+        try {
+            systemPrompt = fs.readFileSync(promptPath, 'utf8');
+        } catch (e) {
+            console.error("[AgentRunner] Could not load markdown prompt, falling back to basic prompt.", e);
+            systemPrompt = `You are an AI Governor. Goals: ${JSON.stringify(goals)}`;
+        }
+
+        // 3. Inject context into the prompt
+        systemPrompt = systemPrompt
+            .replace('{{TreasuryMandate}}', JSON.stringify(goals))
+            .replace('{{TreasuryGoals}}', JSON.stringify(goals))
+            .replace('{{treasuryId}}', this.agentWalletAddress)
+            .replace('{{marketDataJson}}', JSON.stringify(marketData))
+            .replace('{{activeProposalsJson}}', JSON.stringify(activeProposals));
+
+        // Inject the explicit chronological lifecycle for the LLM
+        const lifecycleInstructions = `
+LIFECYCLE RULES (STATLESS RECURRING EXECUTION):
+1. Analyze: Read market data and review active proposals.
+2. Propose: If a new trade is needed, use propose_trade (proposalOpen) and set_token_oracle_market.
+3. Pending Votes: If an existing proposal's state is PENDING, ignore it for this cycle. Do not execute.
+4. Execute Votes: If an existing proposal's state is APPROVED, use proposal_approved, then execute_swap.
+`;
+        systemPrompt += lifecycleInstructions;
 
         let conversationHistory: any[] = [
             { role: 'system', content: systemPrompt }
@@ -107,25 +140,66 @@ export class AgentRunner {
     }
 
     private async executeTool(toolCall: ToolCallRequest): Promise<any> {
-        // Implement standard tool mappings here
+        const relayer = new TransactionRelayer(
+            (this.tradeExecutor as any).circleClient,
+            (this.tradeExecutor as any).walletId
+        );
+        
+        let payload: TransactionPayload | null = null;
+        let txHash = "";
+
         switch (toolCall.toolName) {
             case 'read_treasury_state':
                 return await this.stateProvider.getTreasuryState();
             case 'get_market_data':
                 return await this.stateProvider.getMarketData([toolCall.parameters.token]);
+            
             case 'propose_trade':
                 console.log(`[AgentRunner] propose_trade called with params:`, toolCall.parameters);
-                // Simulate Circle wallet broadcasting the proposalOpen payload
-                const mockProposalId = Math.floor(Math.random() * 1000);
-                return { success: true, proposalId: mockProposalId, txHash: "0xMockHash" };
+                payload = TreasuryVaultTools.proposalOpen(
+                    toolCall.parameters.vaultAddress || process.env.VAULT_ADDRESS || ethers.ZeroAddress,
+                    toolCall.parameters.policyAddress || process.env.POLICY_ADDRESS || ethers.ZeroAddress,
+                    toolCall.parameters.tokenIn,
+                    toolCall.parameters.amountIn
+                );
+                txHash = await relayer.executeTransaction(payload);
+                return { success: true, txHash };
+
+            case 'proposal_approved':
+                console.log(`[AgentRunner] proposal_approved called with params:`, toolCall.parameters);
+                payload = TreasuryVaultTools.proposalApproved(
+                    toolCall.parameters.vaultAddress || process.env.VAULT_ADDRESS || ethers.ZeroAddress,
+                    toolCall.parameters.proposalId
+                );
+                txHash = await relayer.executeTransaction(payload);
+                return { success: true, txHash };
+
+            case 'set_token_oracle_market':
+                console.log(`[AgentRunner] set_token_oracle_market called with params:`, toolCall.parameters);
+                payload = AssetSwapPolicyTools.setTokenOracleMarket(
+                    toolCall.parameters.policyAddress || process.env.POLICY_ADDRESS || ethers.ZeroAddress,
+                    toolCall.parameters.proposalId,
+                    toolCall.parameters.tokenOut
+                );
+                txHash = await relayer.executeTransaction(payload);
+                return { success: true, txHash };
+
             case 'execute_swap':
                 console.log(`[AgentRunner] execute_swap called with params:`, toolCall.parameters);
-                const txId = "circle-tx-" + Math.floor(Math.random() * 1000000);
-                console.log(`[AgentRunner] Circle API returned TxId: ${txId}`);
+                payload = AssetSwapPolicyTools.executeSwap(
+                    toolCall.parameters.policyAddress || process.env.POLICY_ADDRESS || ethers.ZeroAddress,
+                    toolCall.parameters.proposalId,
+                    toolCall.parameters.tokenIn,
+                    toolCall.parameters.tokenOut
+                );
+                txHash = await relayer.executeTransaction(payload);
+                
                 console.log(`[AgentRunner] 🔥 FIRE AND SLEEP INITIATED 🔥`);
-                throw new Error(`FIRE_AND_SLEEP:${txId}`);
+                throw new Error(`FIRE_AND_SLEEP:${txHash}`);
+                
             default:
                 return { error: `Tool ${toolCall.toolName} not implemented or unrecognized.` };
         }
     }
+}
 }

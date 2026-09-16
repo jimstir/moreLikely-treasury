@@ -9,12 +9,8 @@ export async function POST(request: Request) {
     // 3. Instantiate AIOwnerAgent and call analyzeMarket()
     // 4. Save DecisionReport to Prisma DB
     
-    // Mock response for now
-    return NextResponse.json({
-      action: "propose_swap",
-      proposalId: 15,
-      rationale: "Liquidity is deep and WETH price dropped 5%, aligning with allocation strategy to acquire at a discount.",
-      txHash: "0xMockTxHash123..."
+    // TODO: Instantiate AgentRunner and invoke runTick()
+      txHash: "0xPendingEvaluation" // Real txHash will be returned by TransactionRelayer
     });
 
   } catch (error: any) {

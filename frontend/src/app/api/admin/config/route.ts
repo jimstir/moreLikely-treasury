@@ -19,7 +19,9 @@ export async function GET() {
 
 export async function POST(req: Request) {
     try {
-        // Mocking the NextAuth session check
+        // TODO: import { getServerSession } from "next-auth";
+        // const session = await getServerSession();
+        // if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         // In a real app, use `await getServerSession()` to verify ADMIN role
         const body = await req.json();
         const { cronIntervalMs, maxConcurrentJobs, isPaused } = body;

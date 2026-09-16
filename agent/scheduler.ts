@@ -54,13 +54,18 @@ export class PlatformScheduler {
     }
 
     private async executeCycle(maxConcurrent: number) {
-        // 1. Fetch all active Gemini treasuries from Prisma
-        // Based on our schema, aiNetwork might indicate the provider type. We'll map "Gemini (Platform)" to it.
+        // 1. Fetch all platform-managed treasuries (Gemini & 0G)
+        // We only skip Private (Local) deployers since they run their own execution environment.
         const managedTreasuries = await prisma.treasury.findMany({
-            where: { aiNetwork: { contains: "Gemini" } }
+            where: { 
+                OR: [
+                    { aiNetwork: { contains: "Gemini" } },
+                    { aiNetwork: { contains: "0G" } }
+                ]
+            }
         });
         
-        console.log(`[Scheduler] Found ${managedTreasuries.length} managed platform treasuries (Skipping 0G & Private).`);
+        console.log(`[Scheduler] Found ${managedTreasuries.length} managed treasuries (Gemini & 0G). skipping Private.`);
 
         // 3. Process jobs with concurrency limits
         const activePromises: Promise<void>[] = [];
@@ -85,16 +90,27 @@ export class PlatformScheduler {
 
     private async processTreasury(treasury: any): Promise<void> {
         try {
-            console.log(`[Scheduler] Processing treasury ${treasury.id} for owner ${treasury.ownerAddress}...`);
-            const orchestrator = new Orchestrator(ProviderType.GEMINI_SUBSCRIBER);
+            console.log(`[Scheduler] Processing treasury ${treasury.id} for owner ${treasury.ownerAddress} using ${treasury.aiNetwork}...`);
             
-            // This verifies the on-chain NFT. If expired or transferred, it throws.
+            // Route to correct provider based on user selection
+            let providerType = ProviderType.GEMINI_SUBSCRIBER;
+            if (treasury.aiNetwork && treasury.aiNetwork.includes("0G")) {
+                providerType = ProviderType.ZERO_G;
+            }
+
+            const orchestrator = new Orchestrator(providerType);
+            
+            // This verifies the on-chain NFT (for Gemini) or local configs
             await orchestrator.initializeChecks(treasury.ownerAddress);
             
-            // If we reach here, user is a valid active subscriber.
+            // If we reach here, user is valid.
             await orchestrator.runAgentLoop("Analyze treasury state and execute actions based on the mandate if necessary.");
         } catch (error: any) {
-            console.error(`[Scheduler] Failed to process treasury ${treasury.id}: ${error.message}`);
+            if (error.message.includes("402 Payment Required") || error.message.includes("Insufficient 0G Network balance")) {
+                console.warn(`[Scheduler] SKIPPED treasury ${treasury.id}: 0G Wallet Balance empty.`);
+            } else {
+                console.error(`[Scheduler] Failed to process treasury ${treasury.id}: ${error.message}`);
+            }
             // Logic to mark treasury as inactive or notify user goes here
         }
     }

@@ -18,7 +18,12 @@ export async function hasActiveSubscription(walletAddress: string): Promise<bool
     return false;
   }
 
-  // NOTE: For local testing in this project, we explicitly mock to true.
-  // When deployed to production, replace this block with the real RPC read.
+  // Production implementation: check on-chain balance
+  // const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
+  // const contract = new ethers.Contract(process.env.SUBSCRIPTION_CONTRACT!, ABI, provider);
+  // const balance = await contract.balanceOf(walletAddress);
+  // return balance > 0;
+  
+  // Temporarily returning true until SUBSCRIPTION_CONTRACT is deployed
   return true;
 }

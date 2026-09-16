@@ -92,9 +92,7 @@ export default function VotingInterface({ proposalId, vaultAddress }: VotingInte
         return new Promise((resolve) => setTimeout(resolve, 1000));
       });
 
-      // Optimistically update mock UI
-      if (support) setVotesFor((prev) => prev + ethers.parseEther("1000")); // Mock 1000 shares
-      else setVotesAgainst((prev) => prev + ethers.parseEther("1000"));
+      
 
       setVoteStatus("success");
     } catch (err: any) {

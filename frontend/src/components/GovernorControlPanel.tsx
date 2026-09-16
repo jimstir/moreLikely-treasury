@@ -19,12 +19,24 @@ export default function GovernorControlPanel({ treasuryId }: GovernorControlPane
   const handleDeployAgent = () => {
     setAgentStatus("deploying");
     
-    // Simulate deployment to 0G Network
-    setTimeout(() => {
+        // Call the actual deployment API endpoint
+    try {
+      const res = await fetch("/api/admin/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "deploy_agent", gasAllowance })
+      });
+      
+      if (!res.ok) throw new Error("Agent deployment failed");
+      
       setAgentStatus("active");
       setGovernorMode("ai");
       setShowConfig(false);
-    }, 2500);
+    } catch (err) {
+      console.error(err);
+      setAgentStatus("offline");
+      alert("Failed to deploy AI Agent.");
+    }
   };
 
   if (!isOwner) {

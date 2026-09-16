@@ -37,22 +37,8 @@ export default function PerformanceTracker({ treasuryId }: PerformanceTrackerPro
         console.error("Failed to fetch treasury performance:", err);
       }
       
-      // Fallback: If no real data, generate mock historical token flow
-      const mockData: DataPoint[] = [];
-      let tokensAccumulated = 0;
-      const today = new Date();
-      for (let i = 30; i >= 0; i--) {
-        const d = new Date(today);
-        d.setDate(d.getDate() - i);
-        // Simulate token flow (positive bias for accumulation)
-        const change = (Math.random() - 0.4) * 50; 
-        tokensAccumulated += change;
-        mockData.push({
-          date: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
-          value: tokensAccumulated,
-        });
-      }
-      setData(mockData);
+      // Fallback: If no real data, set empty state instead of mocking
+      setData([]);
     };
 
     fetchPerformance();

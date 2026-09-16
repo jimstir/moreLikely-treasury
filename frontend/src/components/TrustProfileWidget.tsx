@@ -13,7 +13,8 @@ interface TrustProfileWidgetProps {
 }
 
 interface DBProfile extends TrustProfileResult {
-  aiOverlay?: AIOverlayResult[];
+  aiOverlay?: any[];
+  overallMaliciousProbability?: number;
   isAutoRenewing?: boolean;
 }
 
@@ -39,7 +40,8 @@ export default function TrustProfileWidget({ treasuryId, vaultAddress, userAddre
               overallScore: data.overallScore,
               attributes: data.scores as AttributeResult[],
               computedAt: new Date(data.lastComputedAt).getTime(),
-              aiOverlay: data.aiOverlay as AIOverlayResult[],
+              aiOverlay: data.aiOverlay as any[],
+              overallMaliciousProbability: data.overallScore, // We store probability in overallScore
               isAutoRenewing: data.isAutoRenewing,
             });
             
@@ -116,7 +118,8 @@ export default function TrustProfileWidget({ treasuryId, vaultAddress, userAddre
       const updatedData = await res.json();
       setProfile((prev) => prev ? {
         ...prev,
-        aiOverlay: updatedData.aiOverlay,
+        aiOverlay: updatedData.profile.aiOverlay,
+        overallMaliciousProbability: updatedData.overallMaliciousProbability,
         computedAt: new Date(updatedData.lastComputedAt).getTime(),
       } : null);
 
@@ -184,19 +187,12 @@ export default function TrustProfileWidget({ treasuryId, vaultAddress, userAddre
     );
   }
 
+  
+  const isAlertTriggered = profile.overallMaliciousProbability !== undefined && profile.overallMaliciousProbability > 0;
+
   return (
     <div className={`glass-card ${styles.container}`}>
-      {/* Top Controls: Auto Renew */}
       <div className={styles.topControls}>
-        <label className={styles.toggleWrap}>
-          <input 
-            type="checkbox" 
-            checked={!!profile.isAutoRenewing} 
-            onChange={toggleAutoRenew} 
-          />
-          <span className={styles.toggleSlider}></span>
-          <span style={{ fontSize: 13 }}>Auto-Renew & Audit (Subscription Required)</span>
-        </label>
         <button 
           className="btn btn-primary" 
           onClick={handleAiAudit} 
@@ -209,66 +205,39 @@ export default function TrustProfileWidget({ treasuryId, vaultAddress, userAddre
       
       {error && <div style={{ color: "#f87171", fontSize: 13, padding: "0 20px" }}>{error}</div>}
 
-      <div className={styles.header}>
-        <div className={styles.ringWrap}>
-          <svg width="110" height="110" viewBox="0 0 110 110">
-            <circle cx="55" cy="55" r="48" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="10" />
-            <circle 
-              cx="55" cy="55" r="48" fill="none" 
-              stroke={profile.overallScore >= 80 ? "#4ade80" : profile.overallScore >= 50 ? "#fbbf24" : "#f87171"} 
-              strokeWidth="10" strokeDasharray="301.59" 
-              strokeDashoffset={301.59 - (301.59 * profile.overallScore) / 100}
-              strokeLinecap="round" style={{ transition: "stroke-dashoffset 1s ease-out" }}
-            />
-          </svg>
-          <div className={styles.ringLabel}>
-            <span className={styles.ringScore}>{profile.overallScore}</span>
-            <span className={styles.ringCaption}>Score</span>
+      <div className={styles.header} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        {isAlertTriggered ? (
+          <div style={{ backgroundColor: 'rgba(248, 113, 113, 0.1)', border: '1px solid #f87171', padding: '16px', borderRadius: '8px', width: '100%', textAlign: 'center' }}>
+            <h2 style={{ color: '#f87171', margin: '0 0 8px 0' }}>⚠️ Master Alert: Review Required</h2>
+            <p style={{ margin: 0, fontSize: '18px', fontWeight: 'bold' }}>Overall Probability of Malicious Intent: {profile.overallMaliciousProbability}%</p>
           </div>
-        </div>
-        <div className={styles.titleBlock}>
-          <h2>Governance & Security Audit</h2>
-          <p>Layer 1 deterministic metrics combined with Layer 2 AI Contextual Overlay.</p>
-        </div>
+        ) : (
+           <div style={{ backgroundColor: 'rgba(74, 222, 128, 0.1)', border: '1px solid #4ade80', padding: '16px', borderRadius: '8px', width: '100%', textAlign: 'center' }}>
+            <h2 style={{ color: '#4ade80', margin: '0 0 8px 0' }}>✅ No Malicious Intent Detected</h2>
+            <p style={{ margin: 0, fontSize: '18px', fontWeight: 'bold' }}>Overall Probability of Malicious Intent: 0%</p>
+          </div>
+        )}
       </div>
 
-      <div className={styles.attributeList}>
-        {profile.attributes.map((attr) => {
-          const aiContext = profile.aiOverlay?.find(a => a.attributeId === attr.id);
-          const currentSeverity = aiContext ? aiContext.revisedSeverity : attr.severity;
-          
-          return (
-            <div key={attr.id} className={styles.attributeRow}>
-              <div className={styles.attrIndex}>{attr.id}</div>
-              
+      {isAlertTriggered && profile.aiOverlay && (
+        <div className={styles.attributeList} style={{ marginTop: '24px' }}>
+          <h3 style={{ marginBottom: '16px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px' }}>Triggered Attributes</h3>
+          {profile.aiOverlay.filter(a => a.isTriggered).map((attr, idx) => (
+            <div key={idx} className={styles.attributeRow} style={{ backgroundColor: 'rgba(0,0,0,0.2)', padding: '16px', borderRadius: '8px', marginBottom: '12px' }}>
               <div className={styles.attrBody}>
                 <div className={styles.attrTop}>
-                  <span className={styles.attrTitle}>{attr.title}</span>
-                  {aiContext && aiContext.revisedSeverity !== attr.severity && (
-                     <span style={{ fontSize: 11, color: '#aaa', textDecoration: 'line-through', marginRight: 8 }}>
-                       {attr.severity}
-                     </span>
-                  )}
-                  <span className={`${styles.badge} ${styles[currentSeverity]}`}>
-                    {currentSeverity}
-                  </span>
-                  {aiContext && <span className={styles.aiBadge}>🤖 AI Analyzed</span>}
+                  <span className={styles.attrTitle} style={{ color: '#fbbf24', fontSize: '16px', fontWeight: 'bold' }}>{attr.attributeName}</span>
                 </div>
-                <div className={styles.attrDetail}>{attr.detail}</div>
-                {attr.rawValue && <div className={styles.attrRaw}>{attr.rawValue}</div>}
-                
-                {aiContext && (
-                  <div className={styles.aiRationaleBox}>
-                    <strong>AI Rationale:</strong> {aiContext.aiRationale}
-                  </div>
-                )}
+                <div className={styles.aiRationaleBox} style={{ marginTop: '8px', borderLeft: '3px solid #fbbf24', paddingLeft: '12px', color: '#eee' }}>
+                  {attr.triggerDescription}
+                </div>
               </div>
             </div>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      )}
 
-      <div className={styles.footer}>
+      <div className={styles.footer} style={{ marginTop: '24px', textAlign: 'center' }}>
         <span className={styles.footerNote}>Last computed: {new Date(profile.computedAt).toLocaleString()}</span>
       </div>
     </div>
