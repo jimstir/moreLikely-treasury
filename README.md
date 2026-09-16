@@ -82,14 +82,27 @@ The platform saves Treasury Mandates and Policies as markdown files.
 
 The backend's AI Agent requires an OpenAI-compatible endpoint. Set `LLM_BASE_URL` and `LLM_API_KEY` in your `.env`. (See "Deploying a Private AI Governor" below for local LLM instructions).
 
-### 5. Circle Wallet Infrastructure
-The AI Governor executes trades autonomously via Circle Programmable Wallets. You must sign up for a free Circle Web3 Services developer account and provide Sandbox API keys in your environment variables.
+### 5. Execution Layer Infrastructure (Choose One)
+
+The AI Governor requires a wallet infrastructure to autonomously execute trades on the blockchain. You must configure one of the following based on your deployment type:
+
+**Option A: Private/Local Deployment (Recommended for Local Testing)**
+Bypass third-party services and execute trades natively.
+1. Set `EXECUTION_MODE="LOCAL_ETHERS"` in your `.env`.
+2. Provide a standard wallet private key in `AGENT_PRIVATE_KEY`.
+3. Ensure the wallet is funded with ETH on your local fork or testnet.
+
+**Option B: Platform Production Deployment (Circle)**
+For production-grade security, the platform utilizes Circle Developer-Controlled Wallets to execute trades without exposing raw private keys.
+1. Set `EXECUTION_MODE="CIRCLE"` in your `.env`.
+2. Sign up for a free Circle Web3 Services developer account.
+3. Provide your Sandbox API keys in your `.env`.
 
 ---
 
 ## Deploying a Private LLM AI Governor
 
-By default, the platform supports utilizing cloud AI providers (like OpenAI or Gemini) to run your Treasury Governor. However, many privacy-focused DAOs prefer to run a **Private AI Governor** completely isolated on their own hardware, ensuring trading strategies and swap policies never leave their local network.
+By default, the platform supports utilizing cloud AI providers to run your Treasury Governor. Running a **Private AI Governor** is done completely isolated on independent hardware.
 
 To deploy a Private LLM Governor:
 
@@ -101,7 +114,7 @@ To deploy a Private LLM Governor:
    LLM_BASE_URL="http://localhost:11434/v1"
    LLM_API_KEY="ollama" # Mock key, required by most SDKs
    ```
-4. **Agent Execution:** The Next.js backend and Agent modules will now route all complex reasoning, proposal generations, and trust profile audits directly to your local hardware. No strategy data will ever be sent to a third party.
+4. **Agent Execution:** The Next.js backend and Agent modules will now route all complex reasoning, proposal generations, and trust profile audits directly to your local hardware.
 
 ---
 
@@ -109,13 +122,17 @@ To deploy a Private LLM Governor:
 To run the Smart Treasury locally, create `.env` files in the root and `frontend/` directories utilizing this template:
 
 ```env
-# 1. Circle API Credentials (Required for Agent Execution)
+# 1. Execution Layer Configuration
+EXECUTION_MODE="LOCAL_ETHERS" # or "CIRCLE"
+AGENT_PRIVATE_KEY="" # Required if LOCAL_ETHERS
+
+# 2. Circle API Credentials (Required if EXECUTION_MODE="CIRCLE")
 CIRCLE_API_KEY=""
 CIRCLE_ENTITY_SECRET=""
 CIRCLE_WALLET_ID=""
 
-# 2. Blockchain Configuration
-OWNER_PRIVATE_KEY="" 
+# 3. Blockchain Configuration
+OWNER_PRIVATE_KEY="" # Required for initial contract deployment
 SEPOLIA_RPC_URL="https://gateway.tenderly.co/public/sepolia"
 NEXT_PUBLIC_ORACLE_ROUTER_ADDRESS=""
 
@@ -141,12 +158,6 @@ ZEROG_STORAGE_NODE_URL="https://storage.0g.ai"
 npm install
 npx hardhat test
 ```
-
-## Design Decisions & Tradeoffs
-
-- **USDC Default:** The platform defaults to USDC as the base asset to integrate seamlessly with the broader Circle ecosystem.
-- **Off-Chain AI Computation:** Running AI inference on-chain can be expensive. We allow treasury owners to run their own AI agents on the service provider they prefer (including local hardware). We trade complete decentralization at the compute layer for cost efficiency by computing off-chain and verifying execution natively on-chain.
-- **SwapRouter02 vs UniversalRouter:** We opted for standard UniswapV3 implementations to maintain compatibility with standard `IERC20.approve`, avoiding the architectural overhaul required for `Permit2`.
 
 ## Future work
 

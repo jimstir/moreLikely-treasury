@@ -26,15 +26,15 @@ export class AgentRunner {
 
     public async runTick(): Promise<void> {
         console.log(`[AgentRunner] Starting tick for agent wallet: ${this.agentWalletAddress}`);
-        
+
         // 1. Fetch deep on-chain state
         const state = await this.stateProvider.getTreasuryState();
         const goals = await this.stateProvider.getTreasuryGoals();
-        
+
         // Assuming the state provider has been upgraded to fetch active proposals
         const activeProposals = (this.stateProvider as any).getActiveProposals ? await (this.stateProvider as any).getActiveProposals() : [];
         const marketData = await this.stateProvider.getMarketData(state.assets);
-        
+
         // 2. Dynamically load the markdown prompt
         const promptPath = path.join(process.cwd(), 'agent', 'prompts', 'treasury-management-prompt.md');
         let systemPrompt = "";
@@ -70,7 +70,7 @@ LIFECYCLE RULES (STATLESS RECURRING EXECUTION):
         let hasFinished = false;
         let invocationId = "inv-" + Date.now();
         let logger = new (await import("./logger")).AgentLogger(process.env.AGENT_PRIVATE_KEY || "");
-        
+
         let proposalRationale = "";
         let proposalTimeframe = "";
         let generatedProposalId: string | null = null;
@@ -79,7 +79,7 @@ LIFECYCLE RULES (STATLESS RECURRING EXECUTION):
         while (!hasFinished) {
             console.log(`[AgentRunner] Sending inference request...`);
             const llmResponse = await this.llmProvider.requestInference(conversationHistory);
-            
+
             // Add LLM's response to history
             conversationHistory.push({
                 role: 'assistant',
@@ -92,16 +92,16 @@ LIFECYCLE RULES (STATLESS RECURRING EXECUTION):
                     console.log(`[AgentRunner] Executing tool: ${toolCall.toolName}`);
                     try {
                         const toolResult = await this.executeTool(toolCall);
-                        
+
                         if (toolCall.toolName === 'propose_trade' && toolCall.parameters.rationale) {
                             proposalRationale = toolCall.parameters.rationale;
                             proposalTimeframe = toolCall.parameters.timeframe || "1 week";
                         }
-                        
+
                         if (toolResult && toolResult.proposalId) {
                             generatedProposalId = toolResult.proposalId.toString();
                         }
-                        
+
                         conversationHistory.push({
                             role: 'tool',
                             name: toolCall.toolName,
@@ -126,7 +126,7 @@ LIFECYCLE RULES (STATLESS RECURRING EXECUTION):
         console.log(`[AgentRunner] Tick complete. Saving transcript...`);
         const use0G = process.env.USE_0G_STORAGE === 'true';
         const receiptHash = await logger.saveTranscript(invocationId, conversationHistory, use0G);
-        
+
         if (generatedProposalId && proposalRationale) {
             await logger.linkDecisionReport(
                 generatedProposalId,
@@ -144,7 +144,7 @@ LIFECYCLE RULES (STATLESS RECURRING EXECUTION):
             (this.tradeExecutor as any).circleClient,
             (this.tradeExecutor as any).walletId
         );
-        
+
         let payload: TransactionPayload | null = null;
         let txHash = "";
 
@@ -153,7 +153,7 @@ LIFECYCLE RULES (STATLESS RECURRING EXECUTION):
                 return await this.stateProvider.getTreasuryState();
             case 'get_market_data':
                 return await this.stateProvider.getMarketData([toolCall.parameters.token]);
-            
+
             case 'propose_trade':
                 console.log(`[AgentRunner] propose_trade called with params:`, toolCall.parameters);
                 payload = TreasuryVaultTools.proposalOpen(
@@ -193,13 +193,13 @@ LIFECYCLE RULES (STATLESS RECURRING EXECUTION):
                     toolCall.parameters.tokenOut
                 );
                 txHash = await relayer.executeTransaction(payload);
-                
+
                 console.log(`[AgentRunner] 🔥 FIRE AND SLEEP INITIATED 🔥`);
                 throw new Error(`FIRE_AND_SLEEP:${txHash}`);
-                
+
             default:
                 return { error: `Tool ${toolCall.toolName} not implemented or unrecognized.` };
         }
     }
 }
-}
+
