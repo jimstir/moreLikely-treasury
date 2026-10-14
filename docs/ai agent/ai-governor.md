@@ -6,6 +6,9 @@ category: Standards Track
 contributors: jimstir
 ---
 
+## TODO / Work In Progress
+- **Task-Isolated Memory:** Upgrade `contextBuilder.ts` to filter retrieved agent memory by specific tasks (e.g., separating `proposalOpen` context from `proposalClose` context). Currently, the agent blindly fetches the last 5 chronological reports, which wastes tokens and dilutes focus when an agent switches contexts.
+
 ## Overview
 
 This specification describes the AI governor mechanism designed to automate governance, risk monitoring, and operational actions for a [Smart Treasury](../smart contracts/treasury-arch.md). The AI Governor introduces an LLM-driven system that is authorized to handle complex tasks for owners, shareholders, and operators, while remaining transparent and auditable.

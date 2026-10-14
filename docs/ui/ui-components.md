@@ -1,5 +1,8 @@
 # Application Component Requirements - moreLikely Smart Treasury
 
+## TODO / Work In Progress
+- **Remove On-Chain Dispute Logic:** Refactor the UI requirements, frontend components (e.g., `AuditInteractionsWidget.tsx`), and API endpoints to completely remove the on-chain dispute/pause mechanism (`triggerDispute`). Processing AI hallucination disputes on-chain has been deemed too complex and unnecessary for the current architecture.
+
 This specification outlines the components, data models, and on-chain interactions for the moreLikely Smart Treasury application.
 
 ### Core Components

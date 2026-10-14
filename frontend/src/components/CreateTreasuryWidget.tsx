@@ -34,7 +34,11 @@ const DEFAULT_USDC_ADDRESSES: Record<string, string> = {
 
 export default function CreateTreasuryWidget({ onCreated }: CreateTreasuryWidgetProps) {
   const { provider, signer, address, switchNetwork } = useWeb3();
-  const [step, setStep] = useState<"form" | "deploying" | "policySetup" | "success">("form");
+  const [step, setStep] = useState<"blueprint" | "form" | "deploying" | "policySetup" | "success">("blueprint");
+  const [blueprintType, setBlueprintType] = useState<"standard" | "strategy_vault">("standard");
+  const [managerFee, setManagerFee] = useState("20"); // e.g. 20%
+  const [managerPayoutAddress, setManagerPayoutAddress] = useState("");
+
   const [formData, setFormData] = useState<FormData>({
     treasuryName: "",
     tokenName: "",

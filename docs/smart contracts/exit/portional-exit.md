@@ -7,13 +7,30 @@ This document defines the verification requirements, state validations, and cont
 ## 1. Reusable Session-Based Design
 
 Unlike one-off exit contracts that must be redeployed for every exit proposal, `PortionalExit.sol` is designed to be fully **reusable** over the treasury's lifetime:
-*   **Initialization**: The constructor (`init`) only registers the immutable `treasuryVault` address and the `owner` address.
+*   **Initialization**: The constructor registers the immutable `treasuryVault` address, the immutable `exitToken` address (backing reserve asset e.g. USDC), and the `owner` address.
 *   **Rounds Management**: The owner initiates a new exit period by calling `startExitPeriod(...)` with parameters for the new round.
 *   **State Reset**: The contract increments a `currentRound` variable, saving the parameters in an `ExitPeriod` struct and snapshotting eligible shareholder balances under `eligibleShares[currentRound][voter]`. This avoids gas-heavy loops to clear old mapping data.
 
 ---
 
-## 2. Shareholder Claim Validations (`PortionalExit.sol`)
+## 2. Token Return Architecture (Audit Finding #6 Fix)
+
+### The Asset Mismatch Vulnerability
+Previously, `claimExit` retrieved the output asset dynamically via `IERC20 exitToken = IERC20(vault.asset())`. Because `TreasuryVault` sets `ERC4626(tToken)`, calling `vault.asset()` returned `treasToken`, creating an asset mismatch where claimants burned `treasToken` only to receive `treasToken` back instead of liquidated strategy reserves.
+
+### The Resolution
+`PortionalExit` now declares:
+```solidity
+IERC20 public immutable exitToken;
+```
+Passed at construction time, `exitToken` guarantees that the exit policy dispenses the actual reserve token (e.g. USDC, DAI) that was liquidated from the strategy.
+
+* **Input Token**: `treasToken` (burned via `burnTreasury` reducing `totalSupply`).
+* **Output Token (Return)**: `exitToken` (actual liquidated backing reserve token).
+
+---
+
+## 3. Shareholder Claim Validations (`PortionalExit.sol`)
 
 Before executing any distribution of underlying vault assets, `PortionalExit` enforces strict cryptographic and state checks during the `claimExit(uint256 amount)` transaction to prevent front-running and double-claiming:
 
@@ -39,19 +56,21 @@ The amount of exit assets dispensed is calculated using the governance-approved 
 ```solidity
 uint256 exitAmount = (amount * period.swapRatio) / 1e18;
 require(exitAmount > 0, "Exit amount is zero");
-require(exitToken.balanceOf(address(this)) >= exitAmount, "Insufficient exit tokens");
+require(exitToken.balanceOf(address(this)) >= exitAmount, "Insufficient exit tokens in contract");
 ```
 *   **Verification**: The exit contract verifies that its own local balance of the `exitToken` is sufficient to cover the claim before executing the transfer.
 
-### D. Safe Share Burning
-To maintain treasury token parity, the exit contract pulls the user's `treasToken` shares and locks them forever in the `0xdead` address, reducing the active share pool:
+### D. Safe Share Burning (Finding #12 Fix)
+To maintain treasury token parity and properly adjust governance voting thresholds, the exit contract burns the user's `treasToken` shares via `burnTreasury`, decreasing total supply:
 ```solidity
-treasToken.safeTransferFrom(msg.sender, address(0xdead), amount);
+ITreasuryToken(address(treasToken)).burnTreasury(msg.sender, amount);
+exitToken.safeTransfer(msg.sender, exitAmount);
+emit ExitClaimed(msg.sender, amount, exitAmount);
 ```
 
 ---
 
-## 3. Policy Integration & Attribute Queries (`ITreasuryPolicy`)
+## 4. Policy Integration & Attribute Queries (`ITreasuryPolicy`)
 
 When setting up or verifying a portional exit, governance tools and the `PortionalExit` contract rely on the standard `ITreasuryPolicy` interface implemented by active strategies (such as `AssetSwapPolicy.sol`). This interface exposes the vital metrics required to calculate the `swapRatio` and audit the strategy's status:
 
@@ -84,7 +103,7 @@ Because policies can manage funds received from multiple historical proposals:
 
 ---
 
-## 4. High-Level Integration Flow
+## 5. High-Level Integration Flow
 
 The interaction below outlines the verification check points between the Vault, Policy, and the `PortionalExit` contract:
 

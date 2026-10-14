@@ -157,9 +157,9 @@ contract TreasuryVault is ERC4626 {
      * @return
      */
     function owed(uint256 num) public view returns (uint256) {
-        uint256 amount = proposalBook[num].withdraw -
-            proposalBook[num].deposits;
-        return (amount);
+        uint256 w = proposalBook[num].withdraw;
+        uint256 d = proposalBook[num].deposits;
+        return w > d ? w - d : 0;
     }
 
     /**  @dev Check if proposal was executed after approval
@@ -258,16 +258,16 @@ contract TreasuryVault is ERC4626 {
         uint256 proposal
     ) public returns (uint256) {
         require(!closedProposals[proposal], "Proposal closed");
-        require(proposalNum <= proposal, "Invalid proposal");
+        require(proposalNum >= proposal, "Invalid proposal");
 
         _allowInternal = true;
         uint256 assets = super.mint(shares, receiver);
         _allowInternal = false;
-        totalShares[proposal] = add(totalShares[proposal], assets);
+        totalShares[proposal] = add(totalShares[proposal], shares);
         uint256 cc = userBook[msg.sender][0].proposal + 1;
         userBook[receiver][proposal].deposit = add(
             userBook[receiver][proposal].deposit,
-            assets
+            shares
         );
         userBook[msg.sender][0].proposal = cc;
         userBook[msg.sender][cc].proposal = proposal;
@@ -319,18 +319,17 @@ contract TreasuryVault is ERC4626 {
         uint256 proposal
     ) public returns (uint256) {
         require(closedProposals[proposal], "Proposal not closed");
-        require(
-            userBook[receiver][proposal].withdrew <=
-                userBook[receiver][proposal].deposit,
-            "Invalid redeem state"
-        );
+
+        uint256 remaining = userBook[receiver][proposal].deposit -
+            userBook[receiver][proposal].withdrew;
+        require(shares <= remaining, "Exceeds proposal deposit");
 
         _allowInternal = true;
         uint256 assets = super.redeem(shares, receiver, owner);
         _allowInternal = false;
         userBook[receiver][proposal].withdrew = add(
             userBook[receiver][proposal].withdrew,
-            assets
+            shares
         );
 
         return assets;
@@ -377,12 +376,16 @@ contract TreasuryVault is ERC4626 {
         emit proposalO(address(token), num, amount, receiver, request);
         return (num);
     }
+
+    function proposalClose(uint256 proposal) external auth returns (bool) {
+        return _proposalClose(proposal);
+    }
     /** @dev Close an opened proposal
      * - MUST account for amount received
      * - MUST proposal must be greater than current proposal
      * @param proposal number of desired proposal to close
      */
-    function proposalClose(uint256 proposal) external auth returns (bool) {
+    function _proposalClose(uint256 proposal) internal returns (bool) {
         require(proposalNum >= proposal, "Invalid proposal");
         require(!closedProposals[proposal], "Already closed");
 
@@ -443,10 +446,14 @@ contract TreasuryVault is ERC4626 {
             require(vote(proposal), "Vote failed");
             uint256 closing = proposalBook[proposal].withdraw;
             proposalBook[closing].close = true;
-            this.proposalClose(closing);
-            this.proposalClose(proposal);
+            proposalBook[proposal].close = true;
+            _proposalClose(closing);
+            _proposalClose(proposal);
             return true;
-        } else if (proposalBook[proposal].request != ProposalType.TXNS) {
+        } else if (
+            proposalBook[proposal].request != ProposalType.TXNS &&
+            proposalBook[proposal].request != ProposalType.EXIT
+        ) {
             return false;
         }
 
@@ -510,15 +517,14 @@ contract TreasuryVault is ERC4626 {
         uint256 num
     ) public returns (bool) {
         require(amount > 0, "Amount must be greater than zero");
-        require(closedProposals[num]);
-        address sender = proposalBook[num].receiver;
 
         if (proposal) {
+            require(num > 0 && closedProposals[num], "Proposal not closed");
             proposalBook[num].deposits = proposalBook[num].deposits + amount;
         }
 
-        SafeERC20.safeTransferFrom(token, sender, address(this), amount);
-        emit FundsAdded(address(token), amount, block.timestamp, sender);
+        SafeERC20.safeTransferFrom(token, msg.sender, address(this), amount);
+        emit FundsAdded(address(token), amount, block.timestamp, msg.sender);
         return true;
     }
 

@@ -40,6 +40,8 @@ model Treasury {
   documents       TreasuryDocument[]
   trustProfiles   TrustProfile[]
   performances    TreasuryPerformance[]
+  attachedPolicies AttachedPolicy[]
+  useCaseBadge    String?          @default("Standard Treasury")
 }
 
 model TreasuryGoals {
@@ -174,4 +176,16 @@ model PlatformConfig {
   maxConcurrentJobs Int      @default(10)
   isPaused          Boolean  @default(false)
   updatedAt         DateTime @updatedAt
+}
+
+
+model AttachedPolicy {
+  id              String   @id @default(uuid())
+  treasuryId      String
+  treasury        Treasury @relation(fields: [treasuryId], references: [id], onDelete: Cascade)
+  policyAddress   String
+  policyType      String   // e.g. "AssetSwapPolicy", "StrategyExit", "TreasuryVault"
+  attachedAt      DateTime @default(now())
+
+  @@unique([treasuryId, policyAddress])
 }

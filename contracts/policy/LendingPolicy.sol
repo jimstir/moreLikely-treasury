@@ -122,6 +122,67 @@ contract LendingPolicy is ITreasuryPolicy {
     }
 
     /**
+     * @dev Calculates the 18-decimal USD value of a token amount using OracleRouter.
+     * Fails closed (reverts) if the market is unconfigured or the oracle call fails.
+     */
+    function _getValue(address token, uint256 amount) internal view returns (uint256) {
+        if (amount == 0) return 0;
+        address market = tokenOracleMarkets[token];
+        require(market != address(0) && oracleRouter != address(0), "Oracle market not configured");
+
+        (bool success, bytes memory data) = oracleRouter.staticcall(
+            abi.encodeWithSignature("getPrice(address)", market)
+        );
+        require(success && data.length > 0, "Oracle call failed");
+        uint256 price = abi.decode(data, (uint256));
+        require(price > 0, "Invalid oracle price");
+
+        uint8 decimals = 18;
+        (bool s2, bytes memory d2) = token.staticcall(abi.encodeWithSignature("decimals()"));
+        if (s2 && d2.length > 0) {
+            decimals = abi.decode(d2, (uint8));
+        }
+
+        // Normalizes value to 1e18
+        return (amount * price) / (10 ** decimals);
+    }
+
+    /**
+     * @dev Public view function to check a token's USD value and verify oracle availability.
+     */
+    function getTokenValue(address token, uint256 amount) external view returns (uint256) {
+        return _getValue(token, amount);
+    }
+
+    /**
+     * @dev View function to preview the maximum borrowable amount for a borrower.
+     */
+    function getMaxBorrow(address borrower, address loanToken) external view returns (uint256) {
+        Loan storage loan = loans[borrower];
+        if (loan.collateralAmount == 0) return 0;
+
+        uint256 collatValue = _getValue(address(loan.collateralToken), loan.collateralAmount);
+        address market = tokenOracleMarkets[loanToken];
+        require(market != address(0) && oracleRouter != address(0), "Loan token oracle not configured");
+
+        (bool success, bytes memory data) = oracleRouter.staticcall(
+            abi.encodeWithSignature("getPrice(address)", market)
+        );
+        require(success && data.length > 0, "Oracle call failed");
+        uint256 loanTokenPrice = abi.decode(data, (uint256));
+        require(loanTokenPrice > 0, "Invalid price");
+
+        uint8 decimals = 18;
+        (bool s2, bytes memory d2) = loanToken.staticcall(abi.encodeWithSignature("decimals()"));
+        if (s2 && d2.length > 0) {
+            decimals = abi.decode(d2, (uint8));
+        }
+
+        uint256 maxBorrowValue = (collatValue * maxLTV) / 10000;
+        return (maxBorrowValue * (10 ** decimals)) / loanTokenPrice;
+    }
+
+    /**
      * @dev Set the Maximum Loan-To-Value ratio.
      * E.g. 7500 = 75%. Base is 10,000.
      */
@@ -194,10 +255,12 @@ contract LendingPolicy is ITreasuryPolicy {
             );
         }
 
-        // Calculate LTV assuming 1:1 token value ratio for simplicity
+        // Calculate LTV using live oracle valuations
         uint256 newTotalDebt = loan.loanAmount + amount;
-        uint256 maxBorrow = (loan.collateralAmount * maxLTV) / 10000;
-        require(newTotalDebt <= maxBorrow, "Exceeds Maximum LTV");
+        uint256 collatValue = _getValue(address(loan.collateralToken), loan.collateralAmount);
+        uint256 debtValue = _getValue(address(loanToken), newTotalDebt);
+
+        require(debtValue * 10000 <= collatValue * maxLTV, "Exceeds Maximum LTV");
 
         loan.loanAmount = newTotalDebt;
         totalOutstandingLoans[address(loanToken)] += amount;
@@ -241,11 +304,9 @@ contract LendingPolicy is ITreasuryPolicy {
 
         // If they still have debt, ensure the new collateral amount supports the debt
         if (loan.loanAmount > 0) {
-            uint256 requiredCollateral = (loan.loanAmount * 10000) / maxLTV;
-            require(
-                newCollateral >= requiredCollateral,
-                "Withdrawal would breach LTV"
-            );
+            uint256 newCollatValue = _getValue(address(loan.collateralToken), newCollateral);
+            uint256 debtValue = _getValue(address(loan.loanToken), loan.loanAmount);
+            require(debtValue * 10000 <= newCollatValue * maxLTV, "Withdrawal would breach LTV");
         }
 
         loan.collateralAmount = newCollateral;
@@ -263,9 +324,11 @@ contract LendingPolicy is ITreasuryPolicy {
         require(loan.loanAmount > 0, "No active loan");
 
         // Check if undercollateralized
-        uint256 maxBorrow = (loan.collateralAmount * maxLTV) / 10000;
+        uint256 collatValue = _getValue(address(loan.collateralToken), loan.collateralAmount);
+        uint256 debtValue = _getValue(address(loan.loanToken), loan.loanAmount);
+        bool ltvBreached = (debtValue * 10000 > collatValue * maxLTV);
         require(
-            loan.loanAmount > maxBorrow,
+            ltvBreached,
             "Loan is sufficiently collateralized"
         );
 
@@ -304,8 +367,9 @@ contract LendingPolicy is ITreasuryPolicy {
         Loan storage loan = loans[borrower];
         require(loan.loanAmount > 0, "No active loan");
 
-        uint256 maxBorrow = (loan.collateralAmount * maxLTV) / 10000;
-        bool ltvBreached = loan.loanAmount > maxBorrow;
+        uint256 collatValue = _getValue(address(loan.collateralToken), loan.collateralAmount);
+        uint256 debtValue = _getValue(address(loan.loanToken), loan.loanAmount);
+        bool ltvBreached = (debtValue * 10000 > collatValue * maxLTV);
         bool timeExpired = block.timestamp > loan.startTime + loanDuration;
         require(ltvBreached || timeExpired, "Loan is healthy and active");
 

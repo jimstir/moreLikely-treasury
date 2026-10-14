@@ -31,6 +31,8 @@ contract VoterPool is ERC20, Ownable {
     // Maps proposalId => ProposalRoot details
     mapping(uint256 => ProposalRoot) public proposalRoots;
 
+    mapping(bytes32 => mapping(bytes32 => bool)) public hasClaimed;
+
     event VotingPeriodSet(uint256 oldPeriod, uint256 newPeriod);
     event GlobalUnlockRootUpdated(bytes32 newRoot);
     event ProposalClosed(uint256 indexed proposalId);
@@ -131,6 +133,9 @@ contract VoterPool is ERC20, Ownable {
             MerkleProof.verify(proof, globalUnlockRoot, leaf),
             "Invalid global unlock proof"
         );
+
+        require(!hasClaimed[globalUnlockRoot][leaf], "Already claimed for this root");
+        hasClaimed[globalUnlockRoot][leaf] = true;
 
         // Burn their receipt tokens. Reverts if they don't have enough vTokens.
         // This naturally prevents double claiming on the same root, as their vToken balance decreases.

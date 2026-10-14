@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "../interfaces/IExitPolicy.sol";
+import "../interfaces/ITreasuryToken.sol";
 import "../treasury/TreasuryVault.sol";
 
 /**
@@ -19,18 +20,22 @@ contract DissolutionExit is IExitPolicy {
     event ExitClaimed(address indexed user, uint256 treasuryTokenAmount, uint256 underlyingClaimed);
 
     address public override treasuryVault;
+    IERC20 public immutable exitToken;
     uint256 public override proposalNum;
     uint256 public override swapRatio;
     uint256 public override exitWindowEnd;
 
     constructor(
         address _treasuryVault,
+        IERC20 _exitToken,
         uint256 _proposalNum,
         uint256 _swapRatio,
         uint256 _exitWindowEnd
     ) {
         require(_treasuryVault != address(0), "Invalid vault address");
+        require(address(_exitToken) != address(0), "Invalid exit token");
         treasuryVault = _treasuryVault;
+        exitToken = _exitToken;
         proposalNum = _proposalNum;
         swapRatio = _swapRatio;
         exitWindowEnd = _exitWindowEnd;
@@ -69,14 +74,13 @@ contract DissolutionExit is IExitPolicy {
 
         TreasuryVault vault = TreasuryVault(payable(treasuryVault));
         IERC20 treasToken = IERC20(vault.treasToken());
-        IERC20 exitToken = IERC20(vault.asset());
 
         uint256 exitAmount = (amount * swapRatio) / 1e18;
         require(exitAmount > 0, "Exit amount is zero");
         require(exitToken.balanceOf(address(this)) >= exitAmount, "Insufficient exit tokens in contract");
 
-        // Pull the treasuryToken from the user to a dead address to effectively burn it
-        treasToken.safeTransferFrom(msg.sender, address(0xdead), amount);
+        // Burn their treasury tokens using TreasuryToken's burnTreasury
+        ITreasuryToken(address(treasToken)).burnTreasury(msg.sender, amount);
 
         // Dispense the exit tokens to the user
         exitToken.safeTransfer(msg.sender, exitAmount);
