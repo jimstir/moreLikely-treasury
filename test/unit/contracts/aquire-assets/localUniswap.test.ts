@@ -139,11 +139,15 @@ describe("Live Uniswap Sepolia Fork Test Suite", function () {
         const policyWethBefore = await wethContract.balanceOf(await livePolicy.getAddress());
 
         // Owner executes swap
+        const block1 = await ethers.provider.getBlock("latest");
+        const deadline1 = (block1 ? block1.timestamp : Math.floor(Date.now() / 1000)) + 3600;
         const executeTx = await (livePolicy as any).connect(owner).executeSwap(
             targetProposalId,
             WETH_ADDRESS,
             USDC_ADDRESS,
             ethers.parseEther("0.0005"),
+            0,
+            deadline1,
             swapCallData
         );
         await executeTx.wait();
@@ -291,11 +295,15 @@ describe("Live Uniswap Sepolia Fork Test Suite", function () {
         const policyUsdcBefore = await usdcContract.balanceOf(await livePolicy.getAddress());
         const policyWethBefore = await wethContract.balanceOf(await livePolicy.getAddress());
 
+        const block2 = await ethers.provider.getBlock("latest");
+        const deadline2 = (block2 ? block2.timestamp : Math.floor(Date.now() / 1000)) + 3600;
         const executeTx = await (livePolicy as any).connect(owner).executeSwap(
             targetProposalId,
             USDC_ADDRESS,
             WETH_ADDRESS,
             swapAmountIn,
+            0,
+            deadline2,
             swapCallData
         );
         const receipt = await executeTx.wait();

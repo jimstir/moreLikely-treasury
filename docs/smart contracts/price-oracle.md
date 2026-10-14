@@ -19,7 +19,15 @@ The `OracleRouter` supports two distinct pricing sources:
 
 ### 2.1 Chainlink Price Feeds (Standard)
 *   The owner registers the token's specific Chainlink Aggregator contract address.
-*   The router queries `latestRoundData()` and dynamically scales the returned value (typically 8 decimals) to the required 18 decimals based on the token's configured decimals.
+*   **Round Integrity Guarantees:** Every Chainlink query rigorously validates data freshness and round sequencing via `latestRoundData()`:
+    *   `answer > 0`: Rejects non-positive or negative prices.
+    *   `updatedAt != 0`: Rejects unfinalized or incomplete rounds.
+    *   `answeredInRound >= roundId`: Guards against carried-over stale round responses.
+    *   `block.timestamp >= updatedAt`: Protects against future-dated timestamps or clock drift.
+*   **Dynamic Policy-Specified Heartbeat (`maxAge`):** Because `OracleRouter` is a shared global pricing engine utilized across multiple treasuries and policies with varying risk profiles, staleness is configured dynamically by the consuming policy rather than hardcoded globally:
+    *   `getPrice(market, maxAge)`: Allows policies to demand their required freshness window (e.g., a high-frequency liquidation engine enforcing `maxAge = 3600` [1 hour], while passive accounting might tolerate `maxAge = 86400` [24 hours]).
+    *   `getPrice(market)`: Standard interface defaulting to `maxAge = 0` (enforcing full round integrity and sequencing without a fixed time expiry).
+*   **Scale Standard:** The router dynamically scales the returned value (typically 8 decimals) to the standard 18 decimals (`1e18`) based on the aggregator's configured decimals.
 
 ### 2.2 Uniswap V3 TWAP Feeds (Long-Tail / Niche Assets)
 *   The owner registers the specific Uniswap V3 pool address.
@@ -31,26 +39,32 @@ The `OracleRouter` supports two distinct pricing sources:
 
 ## 3. Workflow & Routing Logic
 
-When `getPrice(address market)` is called, the router evaluates the registered market address type:
+When `getPrice` is called, the router evaluates the registered market address type:
 
 ```mermaid
 graph TD
-    A[Call getPrice market] --> B{Is Market a Chainlink Aggregator?}
-    B -- Yes --> C[Query Chainlink Aggregator]
-    C --> D[Scale price to 1e18 & Return]
-    B -- No --> E{Is Market a Uniswap V3 Pool?}
-    E -- Yes --> F[Read TWAP Configuration Window]
-    F --> G[Query Pool Tick Accumulator]
-    G --> H[Calculate Time-Weighted Average Tick]
-    H --> I[Convert Tick to Base Asset Price & Return]
-    E -- No --> J[Revert: Market Not Registered]
+    A[Call getPrice market, maxAge] --> B{Is Market a Chainlink Aggregator?}
+    B -- Yes --> C[Query latestRoundData]
+    C --> D{Check Round Integrity<br>roundId, updatedAt, answeredInRound}
+    D -- Pass --> E{maxAge > 0?}
+    E -- Yes --> F{block.timestamp - updatedAt <= maxAge?}
+    F -- No --> G[Revert: Price is stale]
+    F -- Yes --> H[Scale price to 1e18 & Return]
+    E -- No --> H
+    D -- Fail --> I[Revert: Stale or Incomplete Round]
+    B -- No --> J{Is Market a Uniswap V3 Pool?}
+    J -- Yes --> K[Read TWAP Configuration Window]
+    K --> L[Query Pool Tick Accumulator]
+    L --> M[Calculate Time-Weighted Average Tick]
+    M --> N[Convert Tick to Base Asset Price & Return]
+    J -- No --> O[Revert: Market Not Registered]
 ```
 
 ---
 
 ## 4. Smart Contract Interface
 
-Every compliant price oracle module must implement the `IPriceOracle` interface:
+Every compliant price oracle module implements the extended pricing interface:
 
 ```solidity
 // SPDX-License-Identifier: MIT
@@ -63,5 +77,13 @@ interface IPriceOracle {
      * @return price The price scaled to 1e18.
      */
     function getPrice(address market) external view returns (uint256);
+
+    /**
+     * @dev Returns the price of a token from a registered market with a maximum staleness check.
+     * @param market The address of the registered Uniswap Pool or Chainlink Aggregator.
+     * @param maxAge Maximum age of price update in seconds (0 = skip staleness window check).
+     * @return price The price scaled to 1e18.
+     */
+    function getPrice(address market, uint256 maxAge) external view returns (uint256);
 }
 ```

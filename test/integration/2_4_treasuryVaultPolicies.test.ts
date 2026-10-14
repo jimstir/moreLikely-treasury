@@ -15,8 +15,9 @@ describe("2.4 TreasuryVault & Policies Execution Integration", function () {
     const policyAddress = process.env.ASSET_SWAP_POLICY_ADDRESS || ethers.ZeroAddress;
     const ownerKey = process.env.OWNER_PRIVATE_KEY;
 
-    if (!rpcUrl || !ownerKey) {
-      console.warn("Skipping test logic (expecting failure) because SEPOLIA_RPC_URL or OWNER_PRIVATE_KEY is not correctly set.");
+    if (!rpcUrl || !ownerKey || !process.env.TREASURY_VAULT_ADDRESS || !process.env.ASSET_SWAP_POLICY_ADDRESS) {
+      console.warn("Skipping test logic because SEPOLIA_RPC_URL, OWNER_PRIVATE_KEY, TREASURY_VAULT_ADDRESS, or ASSET_SWAP_POLICY_ADDRESS is not set.");
+      return this.skip();
     }
 
     const provider = new ethers.JsonRpcProvider(rpcUrl || "http://localhost:8545");
@@ -30,12 +31,12 @@ describe("2.4 TreasuryVault & Policies Execution Integration", function () {
 
     try {
       // 1. Simulate the AssetSwapPolicy executeSwap call
-      // function executeSwap(uint256 proposalId, address tokenIn, address tokenOut, uint256 amountIn, uint256 totalVotesFor, uint256 totalVotesAgainst, bytes attestationSignature, bytes swapCallData) external
+      // function executeSwap(uint256 proposalId, address tokenIn, address tokenOut, uint256 amountIn, uint256 minAmountOut, uint256 deadline, bytes swapCallData) external
       
       const dummyTokenIn = ethers.Wallet.createRandom().address;
       const dummyTokenOut = ethers.Wallet.createRandom().address;
-      const dummySignature = "0x" + "00".repeat(65);
       const dummyCallData = "0x";
+      const deadline = Math.floor(Date.now() / 1000) + 3600;
 
       // Attempt execution
       const tx = await swapPolicy.executeSwap(
@@ -43,9 +44,8 @@ describe("2.4 TreasuryVault & Policies Execution Integration", function () {
         dummyTokenIn,
         dummyTokenOut,
         ethers.parseUnits("10", 18), // amountIn
-        100, // totalVotesFor
-        0, // totalVotesAgainst
-        dummySignature,
+        0, // minAmountOut
+        deadline,
         dummyCallData
       );
 

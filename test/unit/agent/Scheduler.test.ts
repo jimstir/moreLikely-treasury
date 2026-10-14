@@ -31,7 +31,7 @@ describe("PlatformScheduler (Unit)", function () {
         try {
             const error = new Error("Insufficient 0G Network balance to execute inference.");
             if (error.message.includes("402 Payment Required") || error.message.includes("Insufficient 0G Network balance")) {
-                console.warn(\`[Scheduler] SKIPPED treasury \${treasury.id}: 0G Wallet Balance empty.\`);
+                console.warn(`[Scheduler] SKIPPED treasury ${treasury.id}: 0G Wallet Balance empty.`);
             } else {
                 throw error;
             }

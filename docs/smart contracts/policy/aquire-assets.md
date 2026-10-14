@@ -15,16 +15,19 @@ function executeSwap(
     address tokenIn,
     address tokenOut,
     uint256 amountIn,
+    uint256 minAmountOut,
+    uint256 deadline,
     bytes calldata swapCallData
 ) external onlyOwner returns (bool)
 ```
 
 #### Key Technical Operations inside `executeSwap`:
-1.  **Verification:** Validates that the proposal has not already been executed, and that the policy contract has sufficient `tokenIn` balance.
+1.  **Verification:** Validates that the proposal has not already been executed, that `block.timestamp <= deadline`, and that the policy contract has sufficient `tokenIn` balance.
 2.  **Approve Router:** Grants allowance to the Uniswap `universalRouter` to spend `amountIn` of `tokenIn`.
 3.  **Low-Level Swapping:** Executes the swap call using pre-computed `swapCallData`. 
-4.  **Holding Strategy:** The contract records `tokenOut` in the `heldTokens` array if it is not already tracked. The swapped assets remain held in the policy contract rather than being returned to the vault immediately.
-5.  **State Audit:** Stores the proposal ID in the `proposalIds` array and updates the standard `proposalNum` state variable to reflect the latest active proposal.
+4.  **Slippage Check:** Enforces that received `amountOut >= minAmountOut`.
+5.  **Holding Strategy:** The contract records `tokenOut` in the `heldTokens` array if it is not already tracked. The swapped assets remain held in the policy contract rather than being returned to the vault immediately.
+6.  **State Audit:** Stores the proposal ID in the `proposalIds` array and updates the standard `proposalNum` state variable to reflect the latest active proposal.
 
 ---
 
@@ -37,9 +40,12 @@ function swapBack(
     address tokenIn,
     address tokenOut,
     uint256 amountIn,
+    uint256 minAmountOut,
+    uint256 deadline,
     bytes calldata swapCallData
 ) external onlyOwner returns (uint256 amountOut)
 ```
+- **Slippage & Expiration:** Reverts if `block.timestamp > deadline` or if actual received `amountOut < minAmountOut`.
 - **Tracking**: Pushes a new `SwapBackRecord` to `swapBackHistory`.
 
 ---
@@ -110,13 +116,13 @@ sequenceDiagram
     Note over Vault: Governance Votes on Proposal
     Vault->>Vault: proposalApproved(proposalId)
     Vault->>Policy: safeTransfer(tokenIn, amountIn)
-    Owner->>Policy: executeSwap(proposalId, tokenIn, tokenOut, amountIn, swapCallData)
+    Owner->>Policy: executeSwap(proposalId, tokenIn, tokenOut, amountIn, minAmountOut, deadline, swapCallData)
     Policy->>Uni: swap tokenIn -> tokenOut
     Uni-->>Policy: Return tokenOut
     Note over Policy: Policy holds tokenOut in heldTokens
 
     Note over Owner: Phase 2: Active Rebalancing
-    Owner->>Policy: swapBack(proposalId, tokenOut, tokenIn, amount, swapCallData)
+    Owner->>Policy: swapBack(proposalId, tokenOut, tokenIn, amount, minAmountOut, deadline, swapCallData)
     Policy->>Uni: swap tokenOut -> tokenIn
     Uni-->>Policy: Return tokenIn (retained in Policy)
 

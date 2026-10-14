@@ -39,8 +39,8 @@ export const TREASURY_TOKEN_ABI = [
 
 // ─── AssetSwapPolicy ABI ───
 export const ASSET_SWAP_POLICY_ABI = [
-  "function executeSwap(uint256 proposalId, address tokenIn, address tokenOut, uint256 amountIn, uint256 totalVotesFor, uint256 totalVotesAgainst, bytes attestationSignature, bytes swapCallData) external",
-  "function triggerDispute(uint256 proposalId) external",
+  "function executeSwap(uint256 proposalId, address tokenIn, address tokenOut, uint256 amountIn, uint256 minAmountOut, uint256 deadline, bytes swapCallData) external returns (bool)",
+  "function swapBack(uint256 proposalId, address tokenIn, address tokenOut, uint256 amountIn, uint256 minAmountOut, uint256 deadline, bytes swapCallData) external returns (uint256)",
   "function isPaused(uint256 proposalId) view returns (bool)",
   "event SwapExecuted(uint256 indexed proposalId, address indexed tokenIn, address indexed tokenOut, uint256 amountIn, uint256 amountOut)",
   "event ProposalDisputed(uint256 indexed proposalId, address indexed disputer, uint256 reviewPeriodEnd)",

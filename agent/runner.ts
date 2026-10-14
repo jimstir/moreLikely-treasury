@@ -190,7 +190,11 @@ LIFECYCLE RULES (STATLESS RECURRING EXECUTION):
                     toolCall.parameters.policyAddress || process.env.POLICY_ADDRESS || ethers.ZeroAddress,
                     toolCall.parameters.proposalId,
                     toolCall.parameters.tokenIn,
-                    toolCall.parameters.tokenOut
+                    toolCall.parameters.tokenOut,
+                    toolCall.parameters.amountIn,
+                    toolCall.parameters.minAmountOut,
+                    toolCall.parameters.deadline,
+                    toolCall.parameters.swapCallData
                 );
                 txHash = await relayer.executeTransaction(payload);
 

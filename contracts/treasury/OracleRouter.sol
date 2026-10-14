@@ -8,18 +8,29 @@ import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "../interfaces/IPriceOracle.sol";
 import "../uniswap/TickMath.sol";
 
-
 /**
  * @title OracleRouter
  * @dev The unified pricing engine contract for Open Treasury policy contracts,
  * implementing the IPriceOracle interface. Keyed by market aggregator/pool address.
  */
 contract OracleRouter is Ownable, IPriceOracle, IERC165 {
-    enum MarketType { UNREGISTERED, CHAINLINK, UNISWAP }
+    enum MarketType {
+        UNREGISTERED,
+        CHAINLINK,
+        UNISWAP
+    }
 
     event ChainlinkFeedRegistered(address indexed aggregator);
-    event UniswapPoolRegistered(address indexed pool, address indexed pricedToken, uint32 twapPeriod);
-    event TwapPeriodUpdated(address indexed pool, uint32 oldPeriod, uint32 newPeriod);
+    event UniswapPoolRegistered(
+        address indexed pool,
+        address indexed pricedToken,
+        uint32 twapPeriod
+    );
+    event TwapPeriodUpdated(
+        address indexed pool,
+        uint32 oldPeriod,
+        uint32 newPeriod
+    );
 
     mapping(address => MarketType) public marketTypes;
     mapping(address => address) public pricedTokens;
@@ -33,12 +44,12 @@ contract OracleRouter is Ownable, IPriceOracle, IERC165 {
      */
     function registerChainlinkFeed(address aggregator) external onlyOwner {
         require(aggregator != address(0), "Invalid aggregator address");
-        
+
         // Registry Reuse: If already registered, return early to save gas.
         if (marketTypes[aggregator] == MarketType.CHAINLINK) {
             return;
         }
-        
+
         marketTypes[aggregator] = MarketType.CHAINLINK;
         emit ChainlinkFeedRegistered(aggregator);
     }
@@ -65,7 +76,10 @@ contract OracleRouter is Ownable, IPriceOracle, IERC165 {
 
         address token0 = IUniswapV3Pool(pool).token0();
         address token1 = IUniswapV3Pool(pool).token1();
-        require(pricedToken == token0 || pricedToken == token1, "Token not in pool");
+        require(
+            pricedToken == token0 || pricedToken == token1,
+            "Token not in pool"
+        );
 
         marketTypes[pool] = MarketType.UNISWAP;
         pricedTokens[pool] = pricedToken;
@@ -80,7 +94,10 @@ contract OracleRouter is Ownable, IPriceOracle, IERC165 {
      * @param twapPeriod The new TWAP window in seconds.
      */
     function setTwapPeriod(address pool, uint32 twapPeriod) external onlyOwner {
-        require(marketTypes[pool] == MarketType.UNISWAP, "Market not registered as Uniswap V3");
+        require(
+            marketTypes[pool] == MarketType.UNISWAP,
+            "Market not registered as Uniswap V3"
+        );
         require(twapPeriod > 0, "TWAP period must be > 0");
 
         uint32 oldPeriod = twapPeriods[pool];
@@ -90,14 +107,14 @@ contract OracleRouter is Ownable, IPriceOracle, IERC165 {
     }
 
     /**
-     * @dev Resolves the price for a registered market.
+     * @dev Fetches price with a caller-specified staleness threshold (heartbeat).
      * @param market The address of the Uniswap Pool or Chainlink Aggregator.
-     * @return price The price scaled to 1e18.
+     * @param maxAge Maximum allowed age of the price in seconds (0 = skip age check).
      */
-    function getPrice(address market) external view override returns (uint256) {
+    function getPrice(address market, uint256 maxAge) public view returns (uint256) {
         MarketType mType = marketTypes[market];
         if (mType == MarketType.CHAINLINK) {
-            return getChainlinkPrice(market);
+            return getChainlinkPrice(market, maxAge);
         } else if (mType == MarketType.UNISWAP) {
             return getUniswapTwapPrice(market);
         } else {
@@ -105,11 +122,39 @@ contract OracleRouter is Ownable, IPriceOracle, IERC165 {
         }
     }
 
-    function getChainlinkPrice(address aggregator) internal view returns (uint256) {
-        (, int256 answer, , , ) = AggregatorV3Interface(aggregator).latestRoundData();
+    /**
+     * @dev Standard interface (backwards-compatible with IPriceOracle).
+     */
+    function getPrice(address market) external view override returns (uint256) {
+        return getPrice(market, 0); // 0 performs round checks without a fixed timeout
+    }
+
+    function getChainlinkPrice(
+        address aggregator,
+        uint256 maxAge
+    ) internal view returns (uint256) {
+        (
+            uint80 roundId,
+            int256 answer,
+            ,
+            uint256 updatedAt,
+            uint80 answeredInRound
+        ) = AggregatorV3Interface(aggregator).latestRoundData();
+
+        // 1. Mandatory round integrity checks
         require(answer > 0, "Invalid oracle price");
+        require(updatedAt != 0, "Incomplete round");
+        require(answeredInRound >= roundId, "Stale price round");
+        require(block.timestamp >= updatedAt, "Future price timestamp");
+
+        // 2. Caller-specified staleness enforcement
+        if (maxAge > 0) {
+            require(block.timestamp - updatedAt <= maxAge, "Price is stale");
+        }
+
+        // 3. Decimal normalization to 1e18
         uint8 decimals = AggregatorV3Interface(aggregator).decimals();
-        
+
         if (decimals < 18) {
             return uint256(answer) * (10 ** (18 - decimals));
         } else if (decimals > 18) {
@@ -127,14 +172,25 @@ contract OracleRouter is Ownable, IPriceOracle, IERC165 {
         secondsAgos[0] = twapPeriod;
         secondsAgos[1] = 0;
 
-        (int56[] memory tickCumulatives, ) = IUniswapV3Pool(pool).observe(secondsAgos);
+        (int56[] memory tickCumulatives, ) = IUniswapV3Pool(pool).observe(
+            secondsAgos
+        );
 
         int56 tickCumulativesDelta = tickCumulatives[1] - tickCumulatives[0];
-        int24 timeWeightedAverageTick = int24(tickCumulativesDelta / int56(uint56(twapPeriod)));
-        if (tickCumulativesDelta < 0 && (tickCumulativesDelta % int56(uint56(twapPeriod)) != 0)) {
-            timeWeightedAverageTick--;
+        int56 delta = tickCumulativesDelta / int56(uint56(twapPeriod));
+        if (
+            tickCumulativesDelta < 0 &&
+            (tickCumulativesDelta % int56(uint56(twapPeriod)) != 0)
+        ) {
+            delta--;
         }
 
+        require(
+            delta >= int56(TickMath.MIN_TICK) && delta <= int56(TickMath.MAX_TICK),
+            "TWAP tick out of bounds"
+        );
+
+        int24 timeWeightedAverageTick = int24(delta);
         uint160 sqrtRatioX96 = TickMath.getSqrtRatioAtTick(timeWeightedAverageTick);
         address pricedToken = pricedTokens[pool];
         address token0 = IUniswapV3Pool(pool).token0();
@@ -150,7 +206,11 @@ contract OracleRouter is Ownable, IPriceOracle, IERC165 {
         }
     }
 
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IPriceOracle).interfaceId || interfaceId == type(IERC165).interfaceId;
+    function supportsInterface(
+        bytes4 interfaceId
+    ) external pure override returns (bool) {
+        return
+            interfaceId == type(IPriceOracle).interfaceId ||
+            interfaceId == type(IERC165).interfaceId;
     }
 }

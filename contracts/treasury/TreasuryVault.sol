@@ -188,13 +188,6 @@ contract TreasuryVault is ERC4626 {
         }
     }
 
-    /**
-     * @dev SafeAdd function
-     */
-    function add(uint256 a, uint256 b) internal pure returns (uint256) {
-        return a + b;
-    }
-
     /** @dev Add an authorized user
      */
     function addAuth(address user) external {
@@ -209,7 +202,20 @@ contract TreasuryVault is ERC4626 {
         IERC20 token,
         uint256 proposal
     ) external auth returns (uint256) {
-        require(proposalBook[proposal].request == ProposalType.ADD_TOKEN);
+        require(
+            proposalBook[proposal].request == ProposalType.ADD_TOKEN,
+            "Not ADD_TOKEN proposal"
+        );
+        require(!proposalBook[proposal].executed, "Proposal already executed");
+        require(!closedProposals[proposal], "Proposal closed");
+        require(
+            address(token) == address(proposalBook[proposal].token),
+            "Token does not match proposal"
+        );
+        require(vote(proposal), "Vote failed");
+        require(!approvedToken[token], "Token already approved");
+
+        proposalBook[proposal].executed = true;
         approvedToken[token] = true;
         list += 1;
         _tokenList.push(token);
@@ -234,12 +240,12 @@ contract TreasuryVault is ERC4626 {
         _allowInternal = true;
         uint256 shares = super.deposit(assets, receiver);
         _allowInternal = false;
-        totalShares[proposal] = add(totalShares[proposal], shares);
+        totalShares[proposal] = totalShares[proposal] + shares;
         uint256 cc = userBook[msg.sender][0].proposal + 1;
-        userBook[receiver][proposal].deposit = add(
-            userBook[receiver][proposal].deposit,
-            shares
-        );
+        userBook[receiver][proposal].deposit =
+            userBook[receiver][proposal].deposit +
+            shares;
+
         userBook[msg.sender][0].proposal = cc;
         userBook[msg.sender][cc].proposal = proposal;
         return shares;
@@ -263,12 +269,11 @@ contract TreasuryVault is ERC4626 {
         _allowInternal = true;
         uint256 assets = super.mint(shares, receiver);
         _allowInternal = false;
-        totalShares[proposal] = add(totalShares[proposal], shares);
+        totalShares[proposal] = totalShares[proposal] + shares;
         uint256 cc = userBook[msg.sender][0].proposal + 1;
-        userBook[receiver][proposal].deposit = add(
-            userBook[receiver][proposal].deposit,
-            shares
-        );
+        userBook[receiver][proposal].deposit =
+            userBook[receiver][proposal].deposit +
+            shares;
         userBook[msg.sender][0].proposal = cc;
         userBook[msg.sender][cc].proposal = proposal;
 
@@ -290,24 +295,23 @@ contract TreasuryVault is ERC4626 {
         uint256 proposal
     ) public returns (uint256) {
         require(closedProposals[proposal], "Proposal not closed");
-        require(
-            userBook[receiver][proposal].withdrew + assets <=
-                userBook[receiver][proposal].deposit,
-            "Insufficient deposit"
-        );
+        uint256 shares = previewWithdraw(assets);
+
+        uint256 remaining = userBook[receiver][proposal].deposit -
+            userBook[receiver][proposal].withdrew;
+        require(shares <= remaining, "Exceeds proposal deposit");
 
         _allowInternal = true;
-        uint256 shares = super.withdraw(assets, receiver, owner);
+        shares = super.withdraw(assets, receiver, owner);
         _allowInternal = false;
-        userBook[receiver][proposal].withdrew = add(
-            userBook[receiver][proposal].withdrew,
-            shares
-        );
+        userBook[receiver][proposal].withdrew =
+            userBook[receiver][proposal].withdrew +
+            shares;
 
         return shares;
     }
 
-    /** @dev Burn shares, receive 1 to 1 value of shares
+    /** @dev Burn shares, receive 1 to 1 value of assets
      * - MUST have open proposal number
      * - MUST have userDeposit less than or equal to userWithdrawal
      * NOTE: using ERC 4626 redeem() will not account for proposalWithdrawal
@@ -327,10 +331,9 @@ contract TreasuryVault is ERC4626 {
         _allowInternal = true;
         uint256 assets = super.redeem(shares, receiver, owner);
         _allowInternal = false;
-        userBook[receiver][proposal].withdrew = add(
-            userBook[receiver][proposal].withdrew,
-            shares
-        );
+        userBook[receiver][proposal].withdrew =
+            userBook[receiver][proposal].withdrew +
+            shares;
 
         return assets;
     }

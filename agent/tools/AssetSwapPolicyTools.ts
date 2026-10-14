@@ -10,15 +10,23 @@ export class AssetSwapPolicyTools {
         policyAddress: string,
         proposalId: string,
         tokenIn: string,
-        tokenOut: string
+        tokenOut: string,
+        amountIn?: string,
+        minAmountOut?: string,
+        deadline?: string,
+        swapCallData?: string
     ): TransactionPayload {
         return {
             targetContract: policyAddress,
-            functionSignature: "executeSwap(uint256,address,address)",
+            functionSignature: "executeSwap(uint256,address,address,uint256,uint256,uint256,bytes)",
             abiParameters: [
                 proposalId,
                 tokenIn,
-                tokenOut
+                tokenOut,
+                amountIn || "0",
+                minAmountOut || "0",
+                deadline || "0",
+                swapCallData || "0x"
             ]
         };
     }

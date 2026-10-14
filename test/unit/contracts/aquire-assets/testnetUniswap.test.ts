@@ -27,7 +27,8 @@ describe("Live Sepolia Testnet Sweep (Test #3)", function () {
         // Load run data
         const runId = process.env.TESTNET_RUN_ID;
         if (!runId) {
-            throw new Error("TESTNET_RUN_ID is not set in environment.");
+            console.warn("Skipping testnet tests: TESTNET_RUN_ID is not set in environment.");
+            return this.skip();
         }
 
         const deployments = JSON.parse(fs.readFileSync(DEPLOYMENTS_FILE, "utf-8"));
@@ -170,11 +171,14 @@ describe("Live Sepolia Testnet Sweep (Test #3)", function () {
 
         // Execute Swap on Policy
         console.log("          => Owner manually executing swap on live Uniswap router...");
+        const deadline = Math.floor(Date.now() / 1000) + 3600;
         const executeTx = await livePolicy.connect(owner).executeSwap(
             targetProposalId,
             USDC_ADDRESS,
             WETH_ADDRESS,
             swapAmountIn,
+            0,
+            deadline,
             swapCallData
         );
         await executeTx.wait(1);

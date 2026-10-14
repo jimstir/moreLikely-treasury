@@ -132,8 +132,11 @@ contract AssetSwapPolicy is ITreasuryPolicy {
         address tokenIn,
         address tokenOut,
         uint256 amountIn,
+        uint256 minAmountOut,
+        uint256 deadline,
         bytes calldata swapCallData
     ) external auth returns (bool) {
+        require(block.timestamp <= deadline, "Transaction expired");
         require(!executedProposals[proposalId], "Proposal already executed");
 
         // Verify balance
@@ -156,7 +159,10 @@ contract AssetSwapPolicy is ITreasuryPolicy {
         // Record balance of output token after swap
         uint256 tokenOutAfter = IERC20(tokenOut).balanceOf(address(this));
         uint256 amountOut = tokenOutAfter - tokenOutBefore;
-        require(amountOut > 0, "Swap returned zero output tokens");
+        require(
+            amountOut >= minAmountOut,
+            "Insufficient output amount / Slippage exceeded"
+        );
 
         if (!isTokenHeld[tokenOut]) {
             heldTokens.push(tokenOut);
@@ -177,8 +183,11 @@ contract AssetSwapPolicy is ITreasuryPolicy {
         address tokenIn,
         address tokenOut,
         uint256 amountIn,
+        uint256 minAmountOut,
+        uint256 deadline,
         bytes calldata swapCallData
     ) external auth returns (uint256 amountOut) {
+        require(block.timestamp <= deadline, "Transaction expired");
         require(
             IERC20(tokenIn).balanceOf(address(this)) >= amountIn,
             "Insufficient balance"
@@ -189,7 +198,10 @@ contract AssetSwapPolicy is ITreasuryPolicy {
         (bool success, ) = universalRouter.call(swapCallData);
         require(success, "Swap failed");
         amountOut = IERC20(tokenOut).balanceOf(address(this)) - balBefore;
-        require(amountOut > 0, "Zero output");
+        require(
+            amountOut >= minAmountOut,
+            "Insufficient output amount / Slippage exceeded"
+        );
 
         if (!isTokenHeld[tokenOut]) {
             heldTokens.push(tokenOut);

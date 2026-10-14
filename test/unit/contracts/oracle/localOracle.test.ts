@@ -62,4 +62,161 @@ describe("Live Sepolia Fork OracleRouter Test Suite", function () {
             oracleRouter.getPrice(UNREGISTERED)
         ).to.be.revertedWith("Market not registered");
     });
+
+    describe("Audit Report 1 Remediation: Chainlink Staleness & Uniswap TWAP", function () {
+        let mockAggregator: any;
+        let mockPool: any;
+        let token0: any;
+        let token1: any;
+
+        beforeEach(async function () {
+            const MockERC20 = await ethers.getContractFactory("MockERC20");
+            token0 = await MockERC20.deploy("Token0", "TK0");
+            await token0.waitForDeployment();
+            token1 = await MockERC20.deploy("Token1", "TK1");
+            await token1.waitForDeployment();
+
+            // Ensure address ordering token0 < token1
+            if ((await token0.getAddress()).toLowerCase() > (await token1.getAddress()).toLowerCase()) {
+                const temp = token0;
+                token0 = token1;
+                token1 = temp;
+            }
+
+            const MockAggregatorV3 = await ethers.getContractFactory("MockAggregatorV3");
+            mockAggregator = await MockAggregatorV3.deploy(8, 200000000000); // 2000 USD (8 decimals)
+            await mockAggregator.waitForDeployment();
+
+            const MockUniswapV3Pool = await ethers.getContractFactory("MockUniswapV3Pool");
+            mockPool = await MockUniswapV3Pool.deploy(
+                await token0.getAddress(),
+                await token1.getAddress()
+            );
+            await mockPool.waitForDeployment();
+        });
+
+        /**
+         * @audit pashov-ai-audit-report-1.md - Finding #18
+         * @description Chainlink oracle price consumption lacks round integrity and staleness checks.
+         */
+        describe("[Finding #18] Chainlink Staleness & Round Sequencing", function () {
+            beforeEach(async function () {
+                await oracleRouter.registerChainlinkFeed(await mockAggregator.getAddress());
+            });
+
+            it("should revert with 'Invalid oracle price' when price <= 0", async function () {
+                const block = await ethers.provider.getBlock("latest");
+                const now = block ? block.timestamp : Math.floor(Date.now() / 1000);
+                await mockAggregator.setRoundData(1, 0, now, 1);
+
+                await expect(
+                    oracleRouter.getPrice(await mockAggregator.getAddress())
+                ).to.be.revertedWith("Invalid oracle price");
+
+                await mockAggregator.setRoundData(1, -100, now, 1);
+                await expect(
+                    oracleRouter.getPrice(await mockAggregator.getAddress())
+                ).to.be.revertedWith("Invalid oracle price");
+            });
+
+            it("should revert with 'Incomplete round' when updatedAt == 0", async function () {
+                await mockAggregator.setRoundData(1, 200000000000, 0, 1);
+
+                await expect(
+                    oracleRouter.getPrice(await mockAggregator.getAddress())
+                ).to.be.revertedWith("Incomplete round");
+            });
+
+            it("should revert with 'Stale price round' when answeredInRound < roundId", async function () {
+                const block = await ethers.provider.getBlock("latest");
+                const now = block ? block.timestamp : Math.floor(Date.now() / 1000);
+                await mockAggregator.setRoundData(5, 200000000000, now, 4);
+
+                await expect(
+                    oracleRouter.getPrice(await mockAggregator.getAddress())
+                ).to.be.revertedWith("Stale price round");
+            });
+
+            it("should revert with 'Future price timestamp' when updatedAt > block.timestamp", async function () {
+                const block = await ethers.provider.getBlock("latest");
+                const now = block ? block.timestamp : Math.floor(Date.now() / 1000);
+                await mockAggregator.setRoundData(1, 200000000000, now + 1000, 1);
+
+                await expect(
+                    oracleRouter.getPrice(await mockAggregator.getAddress())
+                ).to.be.revertedWith("Future price timestamp");
+            });
+
+            it("should revert with 'Price is stale' when maxAge threshold is exceeded", async function () {
+                const block = await ethers.provider.getBlock("latest");
+                const now = block ? block.timestamp : Math.floor(Date.now() / 1000);
+                await mockAggregator.setRoundData(1, 200000000000, now - 4000, 1);
+
+                // getPrice(market, maxAge) with maxAge = 3600
+                await expect(
+                    oracleRouter["getPrice(address,uint256)"](await mockAggregator.getAddress(), 3600)
+                ).to.be.revertedWith("Price is stale");
+            });
+
+            it("should succeed and scale decimals accurately to 1e18 when all round checks pass", async function () {
+                const block = await ethers.provider.getBlock("latest");
+                const now = block ? block.timestamp : Math.floor(Date.now() / 1000);
+                await mockAggregator.setRoundData(1, 200000000000, now, 1); // 2000 * 1e8
+
+                const price = await oracleRouter["getPrice(address,uint256)"](await mockAggregator.getAddress(), 3600);
+                expect(price).to.equal(ethers.parseEther("2000"));
+            });
+        });
+
+        /**
+         * @audit pashov-ai-audit-report-1.md - Finding #19
+         * @description Uniswap TWAP tick is truncated to int24 without range checks before TickMath.
+         */
+        describe("[Finding #19] Uniswap TWAP Tick Bound Checks", function () {
+            const twapPeriod = 10;
+
+            beforeEach(async function () {
+                await oracleRouter.registerUniswapPool(
+                    await mockPool.getAddress(),
+                    await token0.getAddress(),
+                    twapPeriod
+                );
+            });
+
+            it("should revert with 'TWAP tick out of bounds' when delta exceeds TickMath.MAX_TICK", async function () {
+                // MAX_TICK is 887272. Let delta = 887273
+                const delta = 887273n;
+                const c0 = 0n;
+                const c1 = delta * BigInt(twapPeriod);
+                await mockPool.setTickCumulatives(c0, c1);
+
+                await expect(
+                    oracleRouter.getPrice(await mockPool.getAddress())
+                ).to.be.revertedWith("TWAP tick out of bounds");
+            });
+
+            it("should revert with 'TWAP tick out of bounds' when delta is below TickMath.MIN_TICK", async function () {
+                // MIN_TICK is -887272. Let delta = -887273
+                const delta = -887273n;
+                const c0 = 0n;
+                const c1 = delta * BigInt(twapPeriod);
+                await mockPool.setTickCumulatives(c0, c1);
+
+                await expect(
+                    oracleRouter.getPrice(await mockPool.getAddress())
+                ).to.be.revertedWith("TWAP tick out of bounds");
+            });
+
+            it("should calculate valid TWAP price for normal tick within bounds", async function () {
+                // Delta = 1000, within bounds [-887272, 887272]
+                const delta = 1000n;
+                const c0 = 0n;
+                const c1 = delta * BigInt(twapPeriod);
+                await mockPool.setTickCumulatives(c0, c1);
+
+                const price = await oracleRouter.getPrice(await mockPool.getAddress());
+                expect(price).to.be.gt(0);
+            });
+        });
+    });
 });

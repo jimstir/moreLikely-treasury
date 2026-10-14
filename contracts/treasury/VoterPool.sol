@@ -103,8 +103,23 @@ contract VoterPool is ERC20, Ownable {
     }
 
     /**
-     * @dev Marks a proposal's Merkle root as closed. 
-     * The actual withdrawal of tokens from the vault is handled separately.
+     * @dev Internal helper to redeem all remaining proposal shares from TreasuryVault back into VoterPool.
+     */
+    function _redeemProposal(uint256 proposalId) internal {
+        (, uint256 deposit, uint256 withdrew) = ITreasuryVault(treasuryVault).userBook(address(this), proposalId);
+        uint256 remaining = deposit - withdrew;
+        if (remaining > 0) {
+            ITreasuryVault(treasuryVault).proposalRedeem(
+                remaining,
+                address(this),
+                address(this),
+                proposalId
+            );
+        }
+    }
+
+    /**
+     * @dev Marks a proposal's Merkle root as closed and redeems the deposited tokens from TreasuryVault.
      * Also updates the global unlock root to reflect newly unlocked tokens.
      */
     function closeProposal(uint256 proposalId, bytes32 newGlobalUnlockRoot) external onlyOwner {
@@ -113,8 +128,22 @@ contract VoterPool is ERC20, Ownable {
         
         globalUnlockRoot = newGlobalUnlockRoot;
         emit GlobalUnlockRootUpdated(newGlobalUnlockRoot);
+
+        // Redeem deposited tokens from TreasuryVault back to VoterPool if the proposal is closed on the vault
+        if (ITreasuryVault(treasuryVault).closedProposals(proposalId)) {
+            _redeemProposal(proposalId);
+        }
         
         emit ProposalClosed(proposalId);
+    }
+
+    /**
+     * @dev Allows the owner to redeem proposal tokens from the vault back to VoterPool
+     * if the vault proposal was closed after closeProposal() was called.
+     */
+    function withdrawFromVault(uint256 proposalId) external onlyOwner {
+        require(proposalRoots[proposalId].closed, "Proposal not closed in pool");
+        _redeemProposal(proposalId);
     }
 
     /**
