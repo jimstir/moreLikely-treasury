@@ -1,6 +1,6 @@
 import { expect } from "chai";
-import { Executor } from "../../../agent/executor";
-import { PolicyActionRecommendation, TreasuryGoals } from "../../../agent/interfaces";
+import { Executor } from "../../../../agent/executor";
+import { PolicyActionRecommendation, TreasuryGoals } from "../../../../agent/interfaces";
 
 describe("Executor Unit Tests", function () {
     let executor: Executor;

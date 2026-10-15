@@ -1,6 +1,6 @@
 import { expect } from "chai";
-import { Orchestrator, ProviderType } from "../../../agent/orchestrator";
-import { ContextBuilder } from "../../../agent/contextBuilder";
+import { Orchestrator, ProviderType } from "../../../../agent/orchestrator";
+import { ContextBuilder } from "../../../../agent/contextBuilder";
 
 describe("0G Network Pipeline", function () {
     let orchestrator: Orchestrator;

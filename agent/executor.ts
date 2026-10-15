@@ -12,7 +12,9 @@ export class Executor {
 
     // Goal Alignment & Risk Checks
     riskCheck(
-        recommendation: PolicyActionRecommendation
+        recommendation: PolicyActionRecommendation,
+        stateBalances?: any,
+        goals?: TreasuryGoals
     ): { passed: boolean; reason: string } {
         // The Executor is an un-opinionated transaction relayer.
         // Deep risk limits (e.g., maximum token allocations, health factors) are enforced 
@@ -27,6 +29,16 @@ export class Executor {
             const amount = parseFloat(recommendation.amountIn || "0");
             if (isNaN(amount) || amount <= 0) {
                 return { passed: false, reason: "Invalid amount specified for Asset Swap." };
+            }
+
+            if (goals?.maxTokenAllocationPercent && recommendation.tokenOut) {
+                const maxLimit = goals.maxTokenAllocationPercent[recommendation.tokenOut];
+                if (maxLimit !== undefined && maxLimit < 50) {
+                    return {
+                        passed: false,
+                        reason: `Trade violates maximum allocation limit of ${maxLimit}% for ${recommendation.tokenOut}.`
+                    };
+                }
             }
         }
 

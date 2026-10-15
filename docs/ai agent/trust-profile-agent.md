@@ -247,3 +247,30 @@ Below is the detailed architectural reasoning for the core community checkpoints
 }
 ```
 
+### 9. Proposal Document Integrity & Intent Alignment
+**AI Governor Reasoning:** The Trust Governor audits open and executed proposals against their associated `DecisionReport` documents. It verifies that the proposal's on-chain attributes (withdrawn asset, amount, destination policy) strictly match the thesis and intent stated in the signed document. Proposals opened without accompanying documents or exhibiting discrepancies are flagged.
+**Required Context Data (JSON):**
+```json
+{
+  "proposals": [
+    {
+      "onChainId": "number",
+      "withdrawAmount": "number",
+      "targetToken": "address",
+      "decisionReport": {
+        "rationale": "string",
+        "timeframe": "string",
+        "ticketReceipt": "string | null"
+      }
+    }
+  ]
+}
+```
+
+### 10. Early Quitting & Strategy Abandonment
+**AI Governor Reasoning:** The Trust Governor detects whether an AI Governor or Treasury Owner opened proposals asserting a "long-term" timeframe, but prematurely closed or abandoned them shortly after execution. Abandoning long-term theses without documented market justification causes capital destruction via premature execution slippage and gas overhead.
+
+### 11. Proposal Churn & Undefined Historical Actions
+**AI Governor Reasoning:** The Trust Governor analyzes the historical lifecycle of all treasury proposals. If a high percentage of proposals are repeatedly initiated and cancelled/closed without fulfilling trades, the treasury is flagged for erratic execution churn and governance instability.
+
+

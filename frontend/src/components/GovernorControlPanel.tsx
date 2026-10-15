@@ -16,7 +16,7 @@ export default function GovernorControlPanel({ treasuryId }: GovernorControlPane
   const [gasAllowance, setGasAllowance] = useState("0.1");
   const [agentStatus, setAgentStatus] = useState<"offline" | "deploying" | "active">("offline");
 
-  const handleDeployAgent = () => {
+  const handleDeployAgent = async () => {
     setAgentStatus("deploying");
     
         // Call the actual deployment API endpoint

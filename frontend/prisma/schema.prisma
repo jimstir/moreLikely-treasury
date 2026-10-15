@@ -26,6 +26,9 @@ model Treasury {
   baseAssetAddress String?          // Base ERC20 token address (optional - can be determined from on-chain)
   tokenAddress    String           @unique // Address of TreasuryToken ERC20
   ownerAddress    String           // Current owner EOA address (can be operator or AI agent EOA)
+  agentAddress    String?          // Registered AI agent execution wallet address
+  smartWalletAddress String?       // Forwarder SmartWallet contract address if deployed
+  customSkillMd   String?          // Deployer-pasted custom strategy / skills.md text
   ownerId         String           
   owner           Wallet           @relation("TreasuryOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   members         TreasuryMember[] 
@@ -52,6 +55,7 @@ model TreasuryGoals {
   stopLoss              Float    @default(5.0) // e.g. 5.0%
   maxTreasuryPercentage Float    @default(10.0) // max size of a single trade (e.g. 10.0%)
   targetAllocations     Json     // e.g. { "WETH": 40.0, "WBTC": 40.0, "USDC": 20.0 }
+  enabledTasks          Json?    // Deployer customizable task toggles e.g. { stopLoss: true, rebalance: true, lending: false }
   dataSources           String   @default("") // Comma-separated list of approved web/news feeds
   disputePeriodSeconds  Int      @default(86400) // Default 24 hours review delay
   updatedAt             DateTime @updatedAt

@@ -1,18 +1,32 @@
 import { ethers } from "ethers";
 import { TransactionPayload } from "./TransactionRelayer";
 
+import { SmartWalletTools } from "./SmartWalletTools";
+
 export class TreasuryVaultTools {
     
     /**
      * Tool: propose_trade
      * Opens a new proposal on the Vault to execute a specific policy action.
+     * If smartWalletAddress is provided, routes through SmartWallet.forwardProposal for gas refunding and rate limits.
      */
     static proposalOpen(
         vaultAddress: string,
         policyAddress: string,
         tokenIn: string,
-        amountInStr: string
+        amountInStr: string,
+        smartWalletAddress?: string
     ): TransactionPayload {
+        if (smartWalletAddress) {
+            return SmartWalletTools.forwardProposal(
+                smartWalletAddress,
+                vaultAddress,
+                policyAddress,
+                tokenIn,
+                amountInStr
+            );
+        }
+
         const amountWei = amountInStr ? ethers.parseUnits(amountInStr, 18).toString() : "0";
 
         return {

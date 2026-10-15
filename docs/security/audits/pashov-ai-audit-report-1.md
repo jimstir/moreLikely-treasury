@@ -1,10 +1,5 @@
 Pashov Solidity Auditor (skill v3) — moreLikely-treasury
 Scan time: 2026-09-09 18:15:00
-Note: The 12 parallel Task agents could not start on this Cursor plan
-("Named models unavailable / Free plans can only use Auto"). The same
-12 specialty lenses were applied by the orchestrator against the in-scope
-bundles. No contract source was modified.
-
 Completeness: 22 unique (Contract, function) in raw, 22 covered in final.
 
 # 🔐 Security Review — moreLikely-treasury

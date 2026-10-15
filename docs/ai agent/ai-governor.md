@@ -94,11 +94,50 @@ For **Platform Subscribers**, these defaults can be secretly augmented. Subscrib
 
 To prevent a compromised AI or backend server from draining treasury funds, the AI Governor MUST adhere to a strict dual-funding security model. The backend server hosting the AI agent's Externally Owned Account (EOA) MUST NOT hold large amounts of capital.
 
-#### Ethereum Gas Escrow
+#### SmartWallet Gas Escrow & Execution Proxy (`SmartWallet.sol`)
 
-The owner MUST deploy an `AgentGasEscrow` smart contract. This contract acts as a tightly-coupled smart wallet that holds the agent's ETH gas budget.
-- **Proposal Gas:** The escrow SHOULD enforce a time-based rate limit (e.g., once every 24 hours) matching the agent's scheduled invocation frequency before releasing gas to open a new proposal.
-- **Execution Gas:** Before releasing gas for trade execution, the escrow MUST verify on-chain that the specific proposal has been approved by the Open Treasury (`proposalApproved`) and has not yet been executed.
+The owner deploys a `SmartWallet` contract linked directly to the `TreasuryVault`. This contract acts as an on-chain execution forwarder and gas escrow for the AI Governor's `executionWallet`:
+- **Single Source of Truth Recipient Verification:** Redundant local policy whitelists are eliminated from the smart wallet. Instead, `SmartWallet.forwardExecution` inspects `vault.proposalBook(proposalId)` on-chain. Execution is authorized ONLY if the target contract exactly matches the proposal's approved `receiver` or the `TreasuryVault` itself.
+- **Proposal Rate Limiting & Gas Refunds:** `forwardProposal` enforces an immutable cooldown interval (`proposalRateLimit`, e.g. 24 hours) between proposal opens and automatically refunds transaction gas in ETH from the contract's escrowed balance back to the agent's execution wallet.
+- **Voting Enforcement:** `forwardExecution` checks `require(vault.vote(proposalId) == true)` and `require(!vault.closedProposals(proposalId))`, mathematically preventing unapproved trade executions.
+- **Close Forwarding:** `forwardClose` permits the execution wallet to forward proposal closure requests to the vault with automated gas refunds.
+
+#### Task Partitioning by Contract Domain
+
+The AI Governor's task space is explicitly partitioned by smart contract boundary:
+1. **`TreasuryVault` Tasks:**
+   - `proposalOpen`: Open formal funding and policy proposals with rate limits and gas refunds.
+   - `proposalApproved`: Execute on-chain approvals once off-chain or on-chain voting passes.
+   - `proposalClose`: Close executed, expired, or vetoed proposals.
+2. **`AssetSwapPolicy` Tasks:**
+   - `setTokenOracleMarket`: Register approved target token markets for active proposals.
+   - `executeSwap`: Route token swaps on Uniswap with slippage limits and deadline constraints.
+   - Automated Rebalancing: Monitor portfolio drift against deployer targets.
+   - Stop-Loss Exits: Monitor price drawdown and initiate defensive swaps.
+3. **`LendingPolicy` Tasks:**
+   - Health Factor Monitoring: Track borrow positions and liquidation proximity.
+   - Yield Optimization: Reallocate liquidity across compliant pools.
+   - `seizeCollateral`: Execute repossession and fallback liquidations when borrower loans default.
+
+#### Deployer Task Customization & Custom Strategies (`skills.md`)
+
+Platform deployers maintain granular control over what tasks the AI Governor is authorized to execute:
+- **Task Toggles (`enabledTasks`):** Deployers can toggle tasks ON or OFF via the treasury configuration (e.g., `{ stopLoss: false, rebalancing: true, lending: false }`). If stop-loss is disabled, the AI Governor ignores drawdown sell rules and respects the deployer's explicit mandate.
+- **Pasted Custom Strategies (`skills.md`):** Deployers can paste custom trading and operational strategies directly into the UI / database (`customSkillMd`). No file upload is required. The `ContextBuilder` dynamically injects these custom instructions into the prompt context.
+
+#### Fail-Safe Circuit Breaker (`SAFE_MODE`)
+
+The agent's `ContextBuilder` implements a strict fail-closed circuit breaker. If on-chain state queries fail (e.g. RPC timeouts, node disconnects, or unverified asset balances), the system immediately engages `SAFE_MODE`. In `SAFE_MODE`, the AI Governor:
+- Halts all automated proposal generation and trade executions.
+- Never hallucinates actions on empty balance arrays.
+- Emits structured telemetry notifying stakeholders of the RPC or data failure.
+
+#### Private / Self-Hosted Agent Receipts (`/api/governor/private-receipt`)
+
+For users deploying self-hosted agents, the platform requires cryptographic accountability:
+- The owner registers their agent's EOA public key (`agentAddress`) in the treasury profile.
+- When the agent executes a decision cycle, it signs the transcript receipt hash using EIP-191.
+- The platform's `/api/governor/private-receipt` endpoint verifies the signature against the registered `agentAddress` before linking the `DecisionReport` to the proposal ledger.
 
 #### LLM Inference Billing
 

@@ -1,8 +1,8 @@
 import { expect } from "chai";
-import { Orchestrator, ProviderType } from "../../../agent/orchestrator";
-import { ContextBuilder } from "../../../agent/contextBuilder";
-import { ReasoningEngine } from "../../../agent/reasoningEngine";
-import { Executor } from "../../../agent/executor";
+import { Orchestrator, ProviderType } from "../../../../agent/orchestrator";
+import { ContextBuilder } from "../../../../agent/contextBuilder";
+import { ReasoningEngine } from "../../../../agent/reasoningEngine";
+import { Executor } from "../../../../agent/executor";
 
 // Mocking dependencies for testing without live LLMs or on-chain calls
 class MockLLMProvider {
@@ -46,7 +46,7 @@ describe("Platform Subscriber Pipeline", function () {
         // 1. Initialize Checks (Will pass because we mock the on-chain subscription check)
         // We override the method just for testing
         orchestrator['checkOnChainSubscription'] = async () => true;
-        await orchestrator.initializeChecks();
+        await orchestrator.initializeChecks("0xMockUserAddress");
         expect(orchestrator.getIsSubscriber()).to.be.true;
 
         // 2. Build Context (Mocking the on-chain state fetch to prevent network calls)

@@ -284,6 +284,8 @@ interface IAssetSwapPolicy {
 
 ## 6. AI Governor Wallet Architecture (Transaction Forwarder)
 
+
+
 To optimize key management and maximize security, the AI Governor utilizes a **Transaction Forwarder** smart wallet pattern (`AgentGasEscrow.sol`). The platform backend manages a single Master Platform Wallet via the **Circle Developer-Controlled Wallets API (App Kits)** to submit transactions via Multi-Party Computation (MPC) for all agents, while the `AgentGasEscrow` holds the individual treasury's gas budget and enforces security policies on-chain.
 
 ### Wallet Implementation Flow

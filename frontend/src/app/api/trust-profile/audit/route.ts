@@ -21,23 +21,43 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Active subscription required for AI Contextual Overlay." }, { status: 403 });
     }
 
-    // 2. Fetch the existing Layer 1 Trust Profile
+    // 2. Fetch the existing Layer 1 Trust Profile with complete lifecycle history
     const profile = await prisma.trustProfile.findUnique({
       where: { walletAddress_treasuryId: { walletAddress, treasuryId } },
-      include: { treasury: { include: { goals: true, documents: true } } },
+      include: {
+        treasury: {
+          include: {
+            goals: true,
+            documents: true,
+            proposals: {
+              include: { decisionReport: true }
+            },
+            performances: {
+              orderBy: { date: "asc" },
+              take: 30
+            }
+          }
+        }
+      },
     });
 
     if (!profile || !profile.scores) {
       return NextResponse.json({ error: "Layer 1 Trust Profile not found. Please generate the base profile first." }, { status: 404 });
     }
 
-    // 3. Extract the Mandate
+    // 3. Extract Mandate and Build Lifecycle Context
     const mandateDoc = profile.treasury?.documents?.find(d => d.documentType === "mandate");
     const mandate = mandateDoc ? mandateDoc.fileUri : "No specific mandate provided.";
 
-        // 4. Call the LLM to generate the Layer 2 Overlay
+    const lifecycleContext = {
+      proposals: profile.treasury?.proposals || [],
+      performances: profile.treasury?.performances || [],
+      goals: profile.treasury?.goals || {}
+    };
+
+    // 4. Call the Trust Governor to generate the Layer 2 Overlay
     const layer1Scores: any = profile.scores;
-    const aiOverlay = await generateAiOverlay(layer1Scores, mandate);
+    const aiOverlay = await generateAiOverlay(layer1Scores, mandate, lifecycleContext);
 
     // Calculate Master Probability
     const triggered = aiOverlay.filter((a: any) => a.isTriggered);

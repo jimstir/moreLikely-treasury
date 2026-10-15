@@ -5,23 +5,27 @@ import path from 'path';
 import { TransactionRelayer, TransactionPayload } from './tools/TransactionRelayer';
 import { TreasuryVaultTools } from './tools/TreasuryVaultTools';
 import { AssetSwapPolicyTools } from './tools/AssetSwapPolicyTools';
+import { SmartWalletTools } from './tools/SmartWalletTools';
 
 export class AgentRunner {
     private llmProvider: ILLMProvider;
     private stateProvider: IStateProvider;
     private tradeExecutor: ITradeExecutor;
     private agentWalletAddress: string;
+    private smartWalletAddress?: string;
 
     constructor(
         llmProvider: ILLMProvider,
         stateProvider: IStateProvider,
         tradeExecutor: ITradeExecutor,
-        agentWalletAddress: string
+        agentWalletAddress: string,
+        smartWalletAddress?: string
     ) {
         this.llmProvider = llmProvider;
         this.stateProvider = stateProvider;
         this.tradeExecutor = tradeExecutor;
         this.agentWalletAddress = agentWalletAddress;
+        this.smartWalletAddress = smartWalletAddress || process.env.SMART_WALLET_ADDRESS;
     }
 
     public async runTick(): Promise<void> {
@@ -145,6 +149,7 @@ LIFECYCLE RULES (STATLESS RECURRING EXECUTION):
             (this.tradeExecutor as any).walletId
         );
 
+        const smartWallet = toolCall.parameters.smartWalletAddress || this.smartWalletAddress || process.env.SMART_WALLET_ADDRESS;
         let payload: TransactionPayload | null = null;
         let txHash = "";
 
@@ -160,46 +165,94 @@ LIFECYCLE RULES (STATLESS RECURRING EXECUTION):
                     toolCall.parameters.vaultAddress || process.env.VAULT_ADDRESS || ethers.ZeroAddress,
                     toolCall.parameters.policyAddress || process.env.POLICY_ADDRESS || ethers.ZeroAddress,
                     toolCall.parameters.tokenIn,
-                    toolCall.parameters.amountIn
+                    toolCall.parameters.amountIn,
+                    smartWallet
                 );
                 txHash = await relayer.executeTransaction(payload);
                 return { success: true, txHash };
 
             case 'proposal_approved':
                 console.log(`[AgentRunner] proposal_approved called with params:`, toolCall.parameters);
-                payload = TreasuryVaultTools.proposalApproved(
-                    toolCall.parameters.vaultAddress || process.env.VAULT_ADDRESS || ethers.ZeroAddress,
-                    toolCall.parameters.proposalId
-                );
+                if (smartWallet) {
+                    const vaultAddr = toolCall.parameters.vaultAddress || process.env.VAULT_ADDRESS || ethers.ZeroAddress;
+                    const iface = new ethers.Interface(["function proposalApproved(uint256 proposal)"]);
+                    const calldata = iface.encodeFunctionData("proposalApproved", [toolCall.parameters.proposalId]);
+                    payload = SmartWalletTools.forwardExecution(smartWallet, vaultAddr, toolCall.parameters.proposalId, calldata);
+                } else {
+                    payload = TreasuryVaultTools.proposalApproved(
+                        toolCall.parameters.vaultAddress || process.env.VAULT_ADDRESS || ethers.ZeroAddress,
+                        toolCall.parameters.proposalId
+                    );
+                }
                 txHash = await relayer.executeTransaction(payload);
                 return { success: true, txHash };
 
             case 'set_token_oracle_market':
                 console.log(`[AgentRunner] set_token_oracle_market called with params:`, toolCall.parameters);
-                payload = AssetSwapPolicyTools.setTokenOracleMarket(
-                    toolCall.parameters.policyAddress || process.env.POLICY_ADDRESS || ethers.ZeroAddress,
-                    toolCall.parameters.proposalId,
-                    toolCall.parameters.tokenOut
-                );
+                if (smartWallet) {
+                    payload = SmartWalletTools.wrapSetTokenOracleMarket(
+                        smartWallet,
+                        toolCall.parameters.policyAddress || process.env.POLICY_ADDRESS || ethers.ZeroAddress,
+                        toolCall.parameters.proposalId,
+                        toolCall.parameters.tokenOut
+                    );
+                } else {
+                    payload = AssetSwapPolicyTools.setTokenOracleMarket(
+                        toolCall.parameters.policyAddress || process.env.POLICY_ADDRESS || ethers.ZeroAddress,
+                        toolCall.parameters.proposalId,
+                        toolCall.parameters.tokenOut
+                    );
+                }
                 txHash = await relayer.executeTransaction(payload);
                 return { success: true, txHash };
 
             case 'execute_swap':
                 console.log(`[AgentRunner] execute_swap called with params:`, toolCall.parameters);
-                payload = AssetSwapPolicyTools.executeSwap(
-                    toolCall.parameters.policyAddress || process.env.POLICY_ADDRESS || ethers.ZeroAddress,
-                    toolCall.parameters.proposalId,
-                    toolCall.parameters.tokenIn,
-                    toolCall.parameters.tokenOut,
-                    toolCall.parameters.amountIn,
-                    toolCall.parameters.minAmountOut,
-                    toolCall.parameters.deadline,
-                    toolCall.parameters.swapCallData
-                );
+                if (smartWallet) {
+                    payload = SmartWalletTools.wrapSwapExecution(
+                        smartWallet,
+                        toolCall.parameters.policyAddress || process.env.POLICY_ADDRESS || ethers.ZeroAddress,
+                        toolCall.parameters.proposalId,
+                        toolCall.parameters.tokenIn,
+                        toolCall.parameters.tokenOut,
+                        toolCall.parameters.amountIn,
+                        toolCall.parameters.minAmountOut,
+                        toolCall.parameters.deadline,
+                        toolCall.parameters.swapCallData
+                    );
+                } else {
+                    payload = AssetSwapPolicyTools.executeSwap(
+                        toolCall.parameters.policyAddress || process.env.POLICY_ADDRESS || ethers.ZeroAddress,
+                        toolCall.parameters.proposalId,
+                        toolCall.parameters.tokenIn,
+                        toolCall.parameters.tokenOut,
+                        toolCall.parameters.amountIn,
+                        toolCall.parameters.minAmountOut,
+                        toolCall.parameters.deadline,
+                        toolCall.parameters.swapCallData
+                    );
+                }
                 txHash = await relayer.executeTransaction(payload);
 
                 console.log(`[AgentRunner] 🔥 FIRE AND SLEEP INITIATED 🔥`);
                 throw new Error(`FIRE_AND_SLEEP:${txHash}`);
+
+            case 'close_proposal':
+                console.log(`[AgentRunner] close_proposal called with params:`, toolCall.parameters);
+                if (smartWallet) {
+                    payload = SmartWalletTools.forwardClose(
+                        smartWallet,
+                        toolCall.parameters.proposalId
+                    );
+                } else {
+                    payload = {
+                        targetContract: toolCall.parameters.vaultAddress || process.env.VAULT_ADDRESS || ethers.ZeroAddress,
+                        functionSignature: "proposalClose(uint256)",
+                        abiParameters: [toolCall.parameters.proposalId]
+                    };
+                }
+                txHash = await relayer.executeTransaction(payload);
+                return { success: true, txHash };
 
             default:
                 return { error: `Tool ${toolCall.toolName} not implemented or unrecognized.` };

@@ -19,12 +19,9 @@ contract SmartWallet {
     uint256 public lastProposalTime;
     uint256 public maxGasPrice;
 
-    mapping(address => bool) public allowedPolicies;
-
     event Deposited(address indexed sender, uint256 amount);
     event Withdrawn(address indexed owner, uint256 amount);
     event GasRefunded(address indexed to, uint256 amount);
-    event PolicyUpdated(address indexed policy, bool allowed);
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Not owner");
@@ -76,11 +73,6 @@ contract SmartWallet {
         maxGasPrice = _newPrice;
     }
 
-    function setPolicyAllowed(address policy, bool allowed) external onlyOwner {
-        allowedPolicies[policy] = allowed;
-        emit PolicyUpdated(policy, allowed);
-    }
-
     function forwardProposal(
         uint256 amount,
         address receiver,
@@ -113,9 +105,10 @@ contract SmartWallet {
         uint256 proposalId,
         bytes calldata data
     ) external onlyExecutionWallet {
+        (, , , , address receiver, , , , ) = vault.proposalBook(proposalId);
         require(
-            allowedPolicies[target] || target == address(vault),
-            "Target not allowed"
+            target == receiver || target == address(vault),
+            "Target not authorized by proposal"
         );
         require(vault.vote(proposalId) == true, "Proposal not approved");
         require(!vault.closedProposals(proposalId), "Proposal closed");
